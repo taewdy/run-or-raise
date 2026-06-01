@@ -58,12 +58,14 @@ final class InstalledApplicationCommandProvider: CommandProviding {
 
         let displayName = bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
         let bundleName = bundle.object(forInfoDictionaryKey: "CFBundleName") as? String
+        let executableName = bundle.object(forInfoDictionaryKey: "CFBundleExecutable") as? String
         let title = displayName ?? bundleName ?? applicationURL.deletingPathExtension().lastPathComponent
         let bundleIdentifier = bundle.bundleIdentifier
 
         return LauncherCommand(
             title: title,
             subtitle: "Installed app",
+            executableName: executableName,
             bundleIdentifier: bundleIdentifier,
             resultType: .installedApplication,
             activationTarget: .installedApplication(

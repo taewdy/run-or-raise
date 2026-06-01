@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import RunOrRaiseApp
 
@@ -16,7 +17,7 @@ struct CommandPaletteViewModelTests {
 
         viewModel.query = "term"
 
-        #expect(viewModel.results == [terminal])
+        #expect(viewModel.results.map(\.command) == [terminal])
         #expect(viewModel.selectedCommandID == terminal.id)
     }
 
@@ -37,6 +38,21 @@ struct CommandPaletteViewModelTests {
         #expect(closeCount == 1)
     }
 
+    @Test("running selected command records usage")
+    func runSelectedCommandRecordsUsage() {
+        let finder = LauncherCommand(title: "Finder", subtitle: "Open finder")
+        let usageStore = RecordingCommandUsageStore()
+        let viewModel = CommandPaletteViewModel(
+            commandIndex: InMemoryCommandIndex(commands: [finder], usageStore: usageStore),
+            launcher: RecordingWorkspaceLauncher(),
+            onCommandRun: {}
+        )
+
+        viewModel.runSelectedCommand()
+
+        #expect(usageStore.recordedIdentities == [finder.usageIdentity])
+    }
+
     @Test("reset clears query and restores all results")
     func resetClearsQuery() {
         let terminal = LauncherCommand(title: "Terminal", subtitle: "Open terminal")
@@ -51,7 +67,7 @@ struct CommandPaletteViewModelTests {
         viewModel.reset()
 
         #expect(viewModel.query.isEmpty)
-        #expect(viewModel.results == [finder, terminal])
+        #expect(viewModel.results.map(\.command) == [finder, terminal])
     }
 }
 
@@ -61,5 +77,17 @@ private final class RecordingWorkspaceLauncher: WorkspaceLaunching {
 
     func openOrRaise(_ command: LauncherCommand) {
         openedCommands.append(command)
+    }
+}
+
+private final class RecordingCommandUsageStore: CommandUsageStoring {
+    private(set) var recordedIdentities: [String] = []
+
+    func usage(for identity: String) -> CommandUsage? {
+        nil
+    }
+
+    func recordSelection(for identity: String, at date: Date) {
+        recordedIdentities.append(identity)
     }
 }

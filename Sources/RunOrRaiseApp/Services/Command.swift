@@ -5,6 +5,7 @@ struct LauncherCommand: Identifiable, Equatable {
     let id: UUID
     let title: String
     let subtitle: String
+    let executableName: String?
     let bundleIdentifier: String?
     let resultType: CommandResultType
     let activationTarget: CommandActivationTarget
@@ -13,6 +14,7 @@ struct LauncherCommand: Identifiable, Equatable {
         id: UUID = UUID(),
         title: String,
         subtitle: String,
+        executableName: String? = nil,
         bundleIdentifier: String? = nil,
         resultType: CommandResultType = .installedApplication,
         activationTarget: CommandActivationTarget? = nil
@@ -20,6 +22,7 @@ struct LauncherCommand: Identifiable, Equatable {
         self.id = id
         self.title = title
         self.subtitle = subtitle
+        self.executableName = executableName
         self.bundleIdentifier = bundleIdentifier
         self.resultType = resultType
         self.activationTarget = activationTarget ?? .installedApplication(
@@ -48,20 +51,36 @@ protocol CommandProviding {
 protocol CommandIndex: AnyObject {
     var allCommands: [LauncherCommand] { get }
     func search(_ query: String) -> [LauncherCommand]
+    func searchResults(_ query: String) -> [CommandSearchResult]
+    func recordSelection(_ command: LauncherCommand)
     func reindex()
 }
 
 final class InMemoryCommandIndex: CommandIndex {
     private let provider: CommandProviding?
+    private let usageStore: CommandUsageStoring
     private(set) var allCommands: [LauncherCommand]
 
-    init(commands: [LauncherCommand], provider: CommandProviding? = nil) {
+    init(
+        commands: [LauncherCommand],
+        provider: CommandProviding? = nil,
+        usageStore: CommandUsageStoring = NoCommandUsageStore()
+    ) {
         self.allCommands = commands
         self.provider = provider
+        self.usageStore = usageStore
     }
 
     func search(_ query: String) -> [LauncherCommand] {
-        FuzzyCommandMatcher(commands: allCommands).search(query)
+        searchResults(query).map(\.command)
+    }
+
+    func searchResults(_ query: String) -> [CommandSearchResult] {
+        FuzzyCommandMatcher(commands: allCommands, usageStore: usageStore).searchResults(query)
+    }
+
+    func recordSelection(_ command: LauncherCommand) {
+        usageStore.recordSelection(for: command.usageIdentity, at: Date())
     }
 
     func reindex() {

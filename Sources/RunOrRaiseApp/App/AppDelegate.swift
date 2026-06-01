@@ -14,7 +14,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         let commandIndex = InMemoryCommandIndex(
             commands: commandProvider.commands(),
-            provider: commandProvider
+            provider: commandProvider,
+            usageStore: UserDefaultsCommandUsageStore()
         )
         let permissionService = AccessibilityPermissionService()
 

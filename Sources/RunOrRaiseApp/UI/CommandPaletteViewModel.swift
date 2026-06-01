@@ -5,7 +5,7 @@ final class CommandPaletteViewModel: ObservableObject {
     @Published var query = "" {
         didSet { updateResults() }
     }
-    @Published private(set) var results: [LauncherCommand]
+    @Published private(set) var results: [CommandSearchResult]
     @Published var selectedCommandID: LauncherCommand.ID?
 
     private let commandIndex: CommandIndex
@@ -20,7 +20,7 @@ final class CommandPaletteViewModel: ObservableObject {
         self.commandIndex = commandIndex
         self.launcher = launcher
         self.onCommandRun = onCommandRun
-        self.results = commandIndex.search("")
+        self.results = commandIndex.searchResults("")
         self.selectedCommandID = results.first?.id
     }
 
@@ -32,15 +32,16 @@ final class CommandPaletteViewModel: ObservableObject {
     func runSelectedCommand() {
         guard let selectedCommand else { return }
         launcher.openOrRaise(selectedCommand)
+        commandIndex.recordSelection(selectedCommand)
         onCommandRun()
     }
 
     private var selectedCommand: LauncherCommand? {
-        results.first { $0.id == selectedCommandID } ?? results.first
+        (results.first { $0.id == selectedCommandID } ?? results.first)?.command
     }
 
     private func updateResults() {
-        results = commandIndex.search(query)
+        results = commandIndex.searchResults(query)
         selectedCommandID = results.first?.id
     }
 }

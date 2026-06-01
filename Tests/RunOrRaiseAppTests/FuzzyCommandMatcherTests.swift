@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import RunOrRaiseApp
 
@@ -23,6 +24,47 @@ struct FuzzyCommandMatcherTests {
         #expect(results.first?.title == "Terminal")
     }
 
+    @Test("ordered character matches return highlight ranges")
+    func orderedCharacterMatchesReturnRanges() {
+        let results = FuzzyCommandMatcher(commands: commands).searchResults("tmn")
+
+        #expect(results.first?.command.title == "Terminal")
+        #expect(results.first?.matchedRanges == [
+            CommandMatchedRange(field: .title, location: 0, length: 1),
+            CommandMatchedRange(field: .title, location: 3, length: 1),
+            CommandMatchedRange(field: .title, location: 5, length: 1)
+        ])
+    }
+
+    @Test("queries match bundle identifiers executable names and paths")
+    func queriesMatchCommandMetadata() {
+        let command = LauncherCommand(
+            title: "Code",
+            subtitle: "Installed app",
+            executableName: "Visual Studio Code",
+            bundleIdentifier: "com.microsoft.VSCode",
+            activationTarget: .installedApplication(
+                bundleIdentifier: "com.microsoft.VSCode",
+                applicationURL: URL(fileURLWithPath: "/Applications/Visual Studio Code.app")
+            )
+        )
+        let matcher = FuzzyCommandMatcher(commands: [command])
+
+        #expect(matcher.search("microsoft").first == command)
+        #expect(matcher.search("visual studio").first == command)
+        #expect(matcher.search("applications/visual").first == command)
+    }
+
+    @Test("word and path boundary matches rank strongly")
+    func boundaryMatchesRankStrongly() {
+        let boundary = LauncherCommand(title: "Visual Studio Code", subtitle: "Installed app")
+        let compact = LauncherCommand(title: "Vision Tools Code", subtitle: "Installed app")
+
+        let results = FuzzyCommandMatcher(commands: [compact, boundary]).search("studio")
+
+        #expect(results.first == boundary)
+    }
+
     @Test("case and diacritic differences are ignored")
     func normalizesQuery() {
         let accented = commands + [
@@ -40,4 +82,103 @@ struct FuzzyCommandMatcherTests {
 
         #expect(results.isEmpty)
     }
+
+    @Test("usage frequency and recency can reorder similarly relevant matches")
+    func usageReordersSimilarMatches() {
+        let terminal = LauncherCommand(title: "Terminal", subtitle: "Running app", bundleIdentifier: "com.apple.Terminal")
+        let terminus = LauncherCommand(title: "Terminus", subtitle: "Running app", bundleIdentifier: "com.example.Terminus")
+        let usageStore = FixtureCommandUsageStore(usages: [
+            terminus.usageIdentity: CommandUsage(
+                selectionCount: 12,
+                lastSelectedAt: Date(timeIntervalSinceNow: -60)
+            )
+        ])
+
+        let results = FuzzyCommandMatcher(
+            commands: [terminal, terminus],
+            usageStore: usageStore
+        ).search("term")
+
+        #expect(results.first == terminus)
+    }
+
+    @Test("running app usage boosts installed app with same bundle identifier")
+    func runningAppUsageBoostsInstalledRepresentation() {
+        let runningTerminus = LauncherCommand(
+            title: "Terminus",
+            subtitle: "Running app",
+            bundleIdentifier: "com.example.Terminus",
+            resultType: .runningApplication,
+            activationTarget: .runningApplication(
+                bundleIdentifier: "com.example.Terminus",
+                processIdentifier: 42
+            )
+        )
+        let installedTerminus = LauncherCommand(
+            title: "Terminus",
+            subtitle: "Installed app",
+            bundleIdentifier: "com.example.Terminus",
+            activationTarget: .installedApplication(
+                bundleIdentifier: "com.example.Terminus",
+                applicationURL: URL(fileURLWithPath: "/Applications/Terminus.app")
+            )
+        )
+        let terminal = LauncherCommand(title: "Terminal", subtitle: "Installed app", bundleIdentifier: "com.apple.Terminal")
+        let usageStore = FixtureCommandUsageStore(usages: [
+            runningTerminus.usageIdentity: CommandUsage(
+                selectionCount: 12,
+                lastSelectedAt: Date(timeIntervalSinceNow: -60)
+            )
+        ])
+
+        let results = FuzzyCommandMatcher(
+            commands: [terminal, installedTerminus],
+            usageStore: usageStore
+        ).search("term")
+
+        #expect(results.first == installedTerminus)
+    }
+
+    @Test("strong text relevance prevents unrelated weak usage from dominating")
+    func weakUsageDoesNotDominateStrongText() {
+        let strong = LauncherCommand(title: "Team", subtitle: "Running app", bundleIdentifier: "com.example.Team")
+        let weak = LauncherCommand(title: "Tiny Eventual Archive Monitor", subtitle: "Running app", bundleIdentifier: "com.example.TinyEventualArchiveMonitor")
+        let usageStore = FixtureCommandUsageStore(usages: [
+            weak.usageIdentity: CommandUsage(
+                selectionCount: 500,
+                lastSelectedAt: Date(timeIntervalSinceNow: -30)
+            )
+        ])
+
+        let results = FuzzyCommandMatcher(
+            commands: [weak, strong],
+            usageStore: usageStore
+        ).search("team")
+
+        #expect(results.first == strong)
+    }
+
+    @Test("usage scoring combines frequency and recency")
+    func usageScoringCombinesFrequencyAndRecency() {
+        let now = Date()
+        let frequentRecent = CommandUsage(selectionCount: 6, lastSelectedAt: now.addingTimeInterval(-60))
+        let infrequentOld = CommandUsage(selectionCount: 1, lastSelectedAt: now.addingTimeInterval(-90 * 24 * 60 * 60))
+
+        #expect(CommandUsageScorer.score(frequentRecent, now: now) > CommandUsageScorer.score(infrequentOld, now: now))
+        #expect(CommandUsageScorer.score(nil, now: now) == 0)
+    }
+}
+
+private final class FixtureCommandUsageStore: CommandUsageStoring {
+    private let usages: [String: CommandUsage]
+
+    init(usages: [String: CommandUsage]) {
+        self.usages = usages
+    }
+
+    func usage(for identity: String) -> CommandUsage? {
+        usages[identity]
+    }
+
+    func recordSelection(for identity: String, at date: Date) {}
 }
