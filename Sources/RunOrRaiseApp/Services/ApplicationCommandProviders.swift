@@ -4,23 +4,32 @@ import Foundation
 final class InstalledApplicationCommandProvider: CommandProviding {
     private let applicationDirectories: [URL]
     private let fileManager: FileManager
+    private let cache: InstalledApplicationCommandCaching
 
     init(
         applicationDirectories: [URL]? = nil,
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        cache: InstalledApplicationCommandCaching = NoInstalledApplicationCommandCache()
     ) {
         self.applicationDirectories = applicationDirectories ?? Self.defaultApplicationDirectories(
             fileManager: fileManager
         )
         self.fileManager = fileManager
+        self.cache = cache
     }
 
     func commands() -> [LauncherCommand] {
-        applicationURLs()
+        let discoveredCommands = applicationURLs()
             .compactMap(makeCommand)
             .sorted { lhs, rhs in
                 lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
             }
+        guard !discoveredCommands.isEmpty else {
+            return cache.loadCommands()
+        }
+
+        cache.saveCommands(discoveredCommands)
+        return discoveredCommands
     }
 
     private static func defaultApplicationDirectories(fileManager: FileManager) -> [URL] {

@@ -17,7 +17,18 @@ struct CommandPaletteView: View {
                 .focused($isSearchFocused)
                 .padding(.horizontal, 18)
                 .padding(.vertical, 16)
-                .onSubmit(viewModel.runSelectedCommand)
+                .onSubmit {
+                    Task { await viewModel.runSelectedCommand() }
+                }
+
+            if let launchMessage = viewModel.launchMessage {
+                Text(launchMessage)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.orange)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 18)
+                    .padding(.bottom, 10)
+            }
 
             Divider()
 
@@ -30,7 +41,7 @@ struct CommandPaletteView: View {
                                 .contentShape(Rectangle())
                                 .onTapGesture {
                                     viewModel.selectedCommandID = item.id
-                                    viewModel.runSelectedCommand()
+                                    Task { await viewModel.runSelectedCommand() }
                                 }
                         }
                     }

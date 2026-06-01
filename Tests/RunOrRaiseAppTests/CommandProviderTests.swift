@@ -31,6 +31,81 @@ struct CommandProviderTests {
         #expect(applicationURL?.standardizedFileURL.path == appURL.standardizedFileURL.path)
     }
 
+    @Test("installed app discovery persists cache")
+    func installedAppDiscoveryPersistsCache() throws {
+        let directory = try makeTemporaryDirectory()
+        let appURL = directory.appending(path: "Example.app", directoryHint: .isDirectory)
+        try makeApplicationBundle(
+            at: appURL,
+            bundleIdentifier: "com.example.Example",
+            displayName: "Example"
+        )
+        let cache = RecordingInstalledApplicationCommandCache()
+
+        let commands = InstalledApplicationCommandProvider(
+            applicationDirectories: [directory],
+            cache: cache
+        ).commands()
+
+        #expect(cache.savedCommands == commands)
+    }
+
+    @Test("installed app provider falls back to cached index when discovery is empty")
+    func installedAppProviderFallsBackToCache() {
+        let cached = LauncherCommand(
+            title: "Cached",
+            subtitle: "Installed app",
+            bundleIdentifier: "com.example.Cached",
+            resultType: .installedApplication,
+            activationTarget: .installedApplication(
+                bundleIdentifier: "com.example.Cached",
+                applicationURL: URL(fileURLWithPath: "/Applications/Cached.app")
+            )
+        )
+        let cache = RecordingInstalledApplicationCommandCache(cachedCommands: [cached])
+
+        let commands = InstalledApplicationCommandProvider(
+            applicationDirectories: [],
+            cache: cache
+        ).commands()
+
+        #expect(commands == [cached])
+        #expect(cache.savedCommands.isEmpty)
+    }
+
+    @Test("user defaults installed app cache persists commands")
+    func userDefaultsInstalledAppCachePersistsCommands() throws {
+        let suiteName = "RunOrRaiseAppTests.\(UUID().uuidString)"
+        let userDefaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { userDefaults.removePersistentDomain(forName: suiteName) }
+        let command = LauncherCommand(
+            title: "Cached",
+            subtitle: "Installed app",
+            executableName: "Cached",
+            bundleIdentifier: "com.example.Cached",
+            resultType: .installedApplication,
+            activationTarget: .installedApplication(
+                bundleIdentifier: "com.example.Cached",
+                applicationURL: URL(fileURLWithPath: "/Applications/Cached.app")
+            )
+        )
+        let firstCache = UserDefaultsInstalledApplicationCommandCache(
+            userDefaults: userDefaults,
+            key: "installed"
+        )
+
+        firstCache.saveCommands([command])
+        let secondCache = UserDefaultsInstalledApplicationCommandCache(
+            userDefaults: userDefaults,
+            key: "installed"
+        )
+
+        #expect(secondCache.loadCommands().map(\.title) == ["Cached"])
+        #expect(secondCache.loadCommands().first?.bundleIdentifier == "com.example.Cached")
+        #expect(secondCache.loadCommands().first?.executableName == "Cached")
+        #expect(secondCache.loadCommands().first?.activationTarget == command.activationTarget)
+    }
+
     @Test("running app commands include process activation metadata")
     func runningAppsIncludeActivationMetadata() {
         let commands = RunningApplicationCommandProvider(
@@ -182,5 +257,22 @@ private final class StaticCommandProvider: CommandProviding {
 
     func commands() -> [LauncherCommand] {
         storedCommands
+    }
+}
+
+private final class RecordingInstalledApplicationCommandCache: InstalledApplicationCommandCaching {
+    private let cachedCommands: [LauncherCommand]
+    private(set) var savedCommands: [LauncherCommand] = []
+
+    init(cachedCommands: [LauncherCommand] = []) {
+        self.cachedCommands = cachedCommands
+    }
+
+    func loadCommands() -> [LauncherCommand] {
+        cachedCommands
+    }
+
+    func saveCommands(_ commands: [LauncherCommand]) {
+        savedCommands = commands
     }
 }

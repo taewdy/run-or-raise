@@ -19,6 +19,7 @@ final class CommandPaletteViewModel: ObservableObject {
     @Published private(set) var results: [CommandSearchResult]
     @Published var selectedCommandID: LauncherCommand.ID?
     @Published private(set) var isLoading = false
+    @Published private(set) var launchMessage: String?
 
     private let commandIndex: CommandIndex
     private let launcher: WorkspaceLaunching
@@ -99,9 +100,12 @@ final class CommandPaletteViewModel: ObservableObject {
         moveSelection(by: -1)
     }
 
-    func runSelectedCommand() {
+    func runSelectedCommand() async {
         guard let selectedCommand else { return }
-        launcher.openOrRaise(selectedCommand)
+        let result = await launcher.openOrRaise(selectedCommand)
+        launchMessage = result.userMessage
+        guard result.didCompleteSelection else { return }
+
         commandIndex.recordSelection(selectedCommand)
         onCommandRun()
     }
@@ -128,6 +132,7 @@ final class CommandPaletteViewModel: ObservableObject {
     }
 
     private func updateResults() {
+        launchMessage = nil
         results = commandIndex.searchResults(query)
         selectedCommandID = results.first?.id
     }

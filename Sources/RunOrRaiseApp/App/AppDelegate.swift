@@ -9,7 +9,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             providers: [
                 RunningWindowCommandProvider(),
                 RunningApplicationCommandProvider(),
-                InstalledApplicationCommandProvider()
+                InstalledApplicationCommandProvider(
+                    cache: UserDefaultsInstalledApplicationCommandCache()
+                )
             ]
         )
         let commandIndex = InMemoryCommandIndex(

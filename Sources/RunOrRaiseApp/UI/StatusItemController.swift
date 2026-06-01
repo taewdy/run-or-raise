@@ -94,8 +94,8 @@ final class StatusItemController: NSObject, StatusItemControlling {
 
     private func addPermissionItems(to menu: NSMenu) {
         for status in permissionService.currentStatuses() {
-            let prefix = status.isGranted ? "Granted" : "Missing"
-            menu.addItem(disabledItem("\(status.name): \(prefix)"))
+            let suffix = status.isGranted ? "Granted" : "Missing - window focus disabled"
+            menu.addItem(disabledItem("\(status.name): \(suffix)"))
             if !status.isGranted {
                 menu.addItem(actionItem(status.recoveryAction, action: #selector(requestPermissions)))
             }

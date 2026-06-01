@@ -22,7 +22,7 @@ struct CommandPaletteViewModelTests {
     }
 
     @Test("running selected command delegates launch and closes palette")
-    func runSelectedCommandLaunchesCommand() {
+    func runSelectedCommandLaunchesCommand() async {
         let finder = LauncherCommand(title: "Finder", subtitle: "Open finder")
         let launcher = RecordingWorkspaceLauncher()
         var closeCount = 0
@@ -32,14 +32,14 @@ struct CommandPaletteViewModelTests {
             onCommandRun: { closeCount += 1 }
         )
 
-        viewModel.runSelectedCommand()
+        await viewModel.runSelectedCommand()
 
         #expect(launcher.openedCommands == [finder])
         #expect(closeCount == 1)
     }
 
     @Test("running selected command records usage")
-    func runSelectedCommandRecordsUsage() {
+    func runSelectedCommandRecordsUsage() async {
         let finder = LauncherCommand(title: "Finder", subtitle: "Open finder")
         let usageStore = RecordingCommandUsageStore()
         let viewModel = CommandPaletteViewModel(
@@ -48,9 +48,67 @@ struct CommandPaletteViewModelTests {
             onCommandRun: {}
         )
 
-        viewModel.runSelectedCommand()
+        await viewModel.runSelectedCommand()
 
         #expect(usageStore.recordedIdentities == [finder.usageIdentity])
+    }
+
+    @Test("running selected command waits for launch before recording usage")
+    func runSelectedCommandWaitsForLaunchBeforeRecordingUsage() async throws {
+        let finder = LauncherCommand(title: "Finder", subtitle: "Open finder")
+        let usageStore = RecordingCommandUsageStore()
+        let launcher = RecordingWorkspaceLauncher()
+        launcher.delayUntilResumed = true
+        var closeCount = 0
+        let viewModel = CommandPaletteViewModel(
+            commandIndex: InMemoryCommandIndex(commands: [finder], usageStore: usageStore),
+            launcher: launcher,
+            onCommandRun: { closeCount += 1 }
+        )
+
+        let runTask = Task { await viewModel.runSelectedCommand() }
+        try await waitUntil {
+            launcher.openedCommands == [finder]
+        }
+
+        #expect(usageStore.recordedIdentities.isEmpty)
+        #expect(closeCount == 0)
+
+        launcher.resume()
+        await runTask.value
+
+        #expect(usageStore.recordedIdentities == [finder.usageIdentity])
+        #expect(closeCount == 1)
+    }
+
+    @Test("failed command activation leaves palette open and does not record usage")
+    func failedCommandActivationDoesNotRecordUsage() async {
+        let window = LauncherCommand(
+            title: "Inbox",
+            subtitle: "Window in Mail",
+            resultType: .runningWindow,
+            activationTarget: .runningWindow(
+                bundleIdentifier: "com.apple.mail",
+                processIdentifier: 100,
+                windowIdentifier: 200
+            )
+        )
+        let usageStore = RecordingCommandUsageStore()
+        let launcher = RecordingWorkspaceLauncher()
+        launcher.result = .accessibilityPermissionRequired
+        var closeCount = 0
+        let viewModel = CommandPaletteViewModel(
+            commandIndex: InMemoryCommandIndex(commands: [window], usageStore: usageStore),
+            launcher: launcher,
+            onCommandRun: { closeCount += 1 }
+        )
+
+        await viewModel.runSelectedCommand()
+
+        #expect(launcher.openedCommands == [window])
+        #expect(usageStore.recordedIdentities.isEmpty)
+        #expect(closeCount == 0)
+        #expect(viewModel.launchMessage == "Accessibility permission is required to focus that window.")
     }
 
     @Test("reset clears query and restores all results")
@@ -303,9 +361,23 @@ struct CommandPaletteViewModelTests {
 @MainActor
 private final class RecordingWorkspaceLauncher: WorkspaceLaunching {
     private(set) var openedCommands: [LauncherCommand] = []
+    var result: WorkspaceLaunchResult = .activatedApplication
+    var delayUntilResumed = false
+    private var continuation: CheckedContinuation<Void, Never>?
 
-    func openOrRaise(_ command: LauncherCommand) {
+    func openOrRaise(_ command: LauncherCommand) async -> WorkspaceLaunchResult {
         openedCommands.append(command)
+        if delayUntilResumed {
+            await withCheckedContinuation { continuation in
+                self.continuation = continuation
+            }
+        }
+        return result
+    }
+
+    func resume() {
+        continuation?.resume()
+        continuation = nil
     }
 }
 
