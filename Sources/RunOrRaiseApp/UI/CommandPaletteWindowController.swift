@@ -21,7 +21,7 @@ final class CommandPaletteWindowController: CommandPaletteWindowControlling {
         }
     }
 
-    private func show() {
+    func show() {
         let panel = window ?? makePanel()
         viewModel?.paletteOpened()
         center(panel)

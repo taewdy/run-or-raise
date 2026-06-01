@@ -10,6 +10,7 @@ final class AppCoordinator {
     private let paletteController: CommandPaletteWindowControlling
     private let statusItemController: StatusItemControlling
     private let hotKey: HotKeyDescriptor
+    private let showPaletteOnLaunch: Bool
 
     init(
         commandIndex: CommandIndex,
@@ -17,6 +18,7 @@ final class AppCoordinator {
         hotKeyService: GlobalHotKeyRegistering,
         workspaceLauncher: WorkspaceLaunching,
         hotKey: HotKeyDescriptor = .default,
+        showPaletteOnLaunch: Bool = true,
         paletteController: CommandPaletteWindowControlling? = nil,
         statusItemController: StatusItemControlling? = nil
     ) {
@@ -25,6 +27,7 @@ final class AppCoordinator {
         self.hotKeyService = hotKeyService
         self.workspaceLauncher = workspaceLauncher
         self.hotKey = hotKey
+        self.showPaletteOnLaunch = showPaletteOnLaunch
         self.paletteController = paletteController ?? CommandPaletteWindowController(
             commandIndex: commandIndex,
             workspaceLauncher: workspaceLauncher
@@ -51,10 +54,18 @@ final class AppCoordinator {
         } catch {
             statusItemController.setHotKeyError(error.localizedDescription)
         }
+
+        if showPaletteOnLaunch {
+            presentPalette()
+        }
     }
 
     func stop() {
         hotKeyService.unregister()
+    }
+
+    func presentPalette() {
+        paletteController.show()
     }
 
     private func togglePalette() {
@@ -86,5 +97,6 @@ protocol StatusItemControlling {
 
 @MainActor
 protocol CommandPaletteWindowControlling {
+    func show()
     func toggle()
 }
