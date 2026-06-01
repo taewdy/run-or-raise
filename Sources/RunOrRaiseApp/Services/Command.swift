@@ -48,25 +48,40 @@ protocol CommandProviding {
     func commands() -> [LauncherCommand]
 }
 
-protocol CommandIndex: AnyObject {
+protocol CommandIndex: AnyObject, Sendable {
     var allCommands: [LauncherCommand] { get }
     func search(_ query: String) -> [LauncherCommand]
     func searchResults(_ query: String) -> [CommandSearchResult]
     func recordSelection(_ command: LauncherCommand)
+    func refreshedCommands() -> [LauncherCommand]
+    func replaceCommands(with commands: [LauncherCommand])
     func reindex()
 }
 
-final class InMemoryCommandIndex: CommandIndex {
+extension CommandIndex {
+    func reindex() {
+        replaceCommands(with: refreshedCommands())
+    }
+}
+
+final class InMemoryCommandIndex: CommandIndex, @unchecked Sendable {
     private let provider: CommandProviding?
     private let usageStore: CommandUsageStoring
-    private(set) var allCommands: [LauncherCommand]
+    private let lock = NSLock()
+    private var commands: [LauncherCommand]
+
+    var allCommands: [LauncherCommand] {
+        lock.withLock {
+            commands
+        }
+    }
 
     init(
         commands: [LauncherCommand],
         provider: CommandProviding? = nil,
         usageStore: CommandUsageStoring = NoCommandUsageStore()
     ) {
-        self.allCommands = commands
+        self.commands = commands
         self.provider = provider
         self.usageStore = usageStore
     }
@@ -83,9 +98,15 @@ final class InMemoryCommandIndex: CommandIndex {
         usageStore.recordSelection(for: command.usageIdentity, at: Date())
     }
 
-    func reindex() {
-        guard let provider else { return }
-        allCommands = provider.commands()
+    func refreshedCommands() -> [LauncherCommand] {
+        guard let provider else { return allCommands }
+        return provider.commands()
+    }
+
+    func replaceCommands(with commands: [LauncherCommand]) {
+        lock.withLock {
+            self.commands = commands
+        }
     }
 }
 

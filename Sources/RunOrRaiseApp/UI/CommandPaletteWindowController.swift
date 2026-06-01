@@ -23,13 +23,14 @@ final class CommandPaletteWindowController: CommandPaletteWindowControlling {
 
     private func show() {
         let panel = window ?? makePanel()
-        viewModel?.reset()
+        viewModel?.paletteOpened()
         center(panel)
         NSApplication.shared.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
     }
 
     private func hide() {
+        viewModel?.cancelRefresh()
         window?.orderOut(nil)
     }
 
@@ -37,14 +38,16 @@ final class CommandPaletteWindowController: CommandPaletteWindowControlling {
         let viewModel = CommandPaletteViewModel(
             commandIndex: commandIndex,
             launcher: workspaceLauncher,
-            onCommandRun: { [weak self] in self?.hide() }
+            onCommandRun: { [weak self] in self?.hide() },
+            onClose: { [weak self] in self?.hide() }
         )
-        let panel = NSPanel(
+        let panel = CommandPalettePanel(
             contentRect: NSRect(x: 0, y: 0, width: 560, height: 330),
             styleMask: [.titled, .fullSizeContentView, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
+        panel.paletteViewModel = viewModel
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
         panel.isFloatingPanel = true
@@ -59,13 +62,64 @@ final class CommandPaletteWindowController: CommandPaletteWindowControlling {
     }
 
     private func center(_ panel: NSPanel) {
-        guard let screenFrame = NSScreen.main?.visibleFrame else {
+        guard let screenFrame = activeScreenFrame() else {
             panel.center()
             return
         }
 
         let x = screenFrame.midX - panel.frame.width / 2
-        let y = screenFrame.maxY - panel.frame.height - 120
+        let y = screenFrame.midY - panel.frame.height / 2
         panel.setFrameOrigin(NSPoint(x: x, y: y))
+    }
+
+    private func activeScreenFrame() -> NSRect? {
+        let mouseLocation = NSEvent.mouseLocation
+        return NSScreen.screens.first { screen in
+            screen.frame.contains(mouseLocation)
+        }?.visibleFrame ?? NSScreen.main?.visibleFrame
+    }
+}
+
+private final class CommandPalettePanel: NSPanel {
+    weak var paletteViewModel: CommandPaletteViewModel?
+
+    override func sendEvent(_ event: NSEvent) {
+        guard event.type == .keyDown, handlePaletteKey(event) else {
+            super.sendEvent(event)
+            return
+        }
+    }
+
+    private func handlePaletteKey(_ event: NSEvent) -> Bool {
+        guard isVisible, let key = PaletteKey(event: event) else { return false }
+
+        switch key {
+        case .down:
+            paletteViewModel?.selectNext()
+        case .up:
+            paletteViewModel?.selectPrevious()
+        case .escape:
+            paletteViewModel?.close()
+        }
+        return true
+    }
+}
+
+private enum PaletteKey {
+    case up
+    case down
+    case escape
+
+    init?(event: NSEvent) {
+        switch event.keyCode {
+        case 53:
+            self = .escape
+        case 125:
+            self = .down
+        case 126:
+            self = .up
+        default:
+            return nil
+        }
     }
 }
