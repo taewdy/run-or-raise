@@ -45,22 +45,31 @@ final class RunningWindowCommandProvider: CommandProviding {
         from windowInfo: [[String: Any]],
         accessibilityWindows: (pid_t) -> [RunningAccessibilityWindowSnapshot]
     ) -> [RunningWindowSnapshot] {
-        var accessibilityCache: [pid_t: [CGWindowID: String]] = [:]
+        var accessibilityCache: [pid_t: [RunningAccessibilityWindowSnapshot]] = [:]
+        var matchedAccessibilityIdentifiers: [pid_t: Set<CGWindowID>] = [:]
 
-        return windowInfo.compactMap { info in
+        let coreGraphicsSnapshots = windowInfo.compactMap { info in
             makeSnapshot(from: info) { processIdentifier, windowIdentifier in
                 guard let windowIdentifier else { return nil }
                 if accessibilityCache[processIdentifier] == nil {
-                    accessibilityCache[processIdentifier] = Dictionary(
-                        uniqueKeysWithValues: accessibilityWindows(processIdentifier).compactMap { snapshot in
-                            guard let identifier = snapshot.windowIdentifier else { return nil }
-                            return (identifier, snapshot.title)
-                        }
-                    )
+                    accessibilityCache[processIdentifier] = accessibilityWindows(processIdentifier)
                 }
-                return accessibilityCache[processIdentifier]?[windowIdentifier]
+                let title = accessibilityCache[processIdentifier]?
+                    .first { $0.windowIdentifier == windowIdentifier }?
+                    .title
+                if title != nil {
+                    matchedAccessibilityIdentifiers[processIdentifier, default: []].insert(windowIdentifier)
+                }
+                return title
             }
         }
+
+        return coreGraphicsSnapshots + accessibilityOnlySnapshots(
+            from: windowInfo,
+            accessibilityWindows: accessibilityWindows,
+            accessibilityCache: &accessibilityCache,
+            matchedIdentifiers: matchedAccessibilityIdentifiers
+        )
     }
 
     private static func makeSnapshot(
@@ -111,6 +120,61 @@ final class RunningWindowCommandProvider: CommandProviding {
         }
         return accessibilityTitle(processIdentifier, windowIdentifier)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    }
+
+    private static func accessibilityOnlySnapshots(
+        from windowInfo: [[String: Any]],
+        accessibilityWindows: (pid_t) -> [RunningAccessibilityWindowSnapshot],
+        accessibilityCache: inout [pid_t: [RunningAccessibilityWindowSnapshot]],
+        matchedIdentifiers: [pid_t: Set<CGWindowID>]
+    ) -> [RunningWindowSnapshot] {
+        visibleApplications(from: windowInfo).flatMap { app in
+            if accessibilityCache[app.processIdentifier] == nil {
+                accessibilityCache[app.processIdentifier] = accessibilityWindows(app.processIdentifier)
+            }
+
+            let matched = matchedIdentifiers[app.processIdentifier] ?? []
+            return (accessibilityCache[app.processIdentifier] ?? []).compactMap { snapshot -> RunningWindowSnapshot? in
+                let title = snapshot.title.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !title.isEmpty else { return nil }
+                if let identifier = snapshot.windowIdentifier, matched.contains(identifier) {
+                    return nil
+                }
+                return RunningWindowSnapshot(
+                    appName: app.appName,
+                    bundleIdentifier: app.bundleIdentifier,
+                    processIdentifier: app.processIdentifier,
+                    windowIdentifier: snapshot.windowIdentifier,
+                    title: title
+                )
+            }
+        }
+    }
+
+    private static func visibleApplications(from windowInfo: [[String: Any]]) -> [VisibleApplication] {
+        var seen = Set<pid_t>()
+        return windowInfo.compactMap { info in
+            guard
+                let processIdentifier = pid(from: info[kCGWindowOwnerPID as String]),
+                seen.insert(processIdentifier).inserted,
+                let layer = int(from: info[kCGWindowLayer as String]),
+                layer == 0
+            else {
+                return nil
+            }
+
+            let runningApplication = NSRunningApplication(processIdentifier: processIdentifier)
+            let ownerName = (info[kCGWindowOwnerName as String] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let appName = runningApplication?.localizedName ?? ownerName
+            guard let appName, !appName.isEmpty else { return nil }
+
+            return VisibleApplication(
+                appName: appName,
+                bundleIdentifier: runningApplication?.bundleIdentifier,
+                processIdentifier: processIdentifier
+            )
+        }
     }
 
     private static func accessibilityWindowSnapshots(processIdentifier: pid_t) -> [RunningAccessibilityWindowSnapshot] {
@@ -194,4 +258,10 @@ final class RunningWindowCommandProvider: CommandProviding {
             )
         )
     }
+}
+
+private struct VisibleApplication {
+    let appName: String
+    let bundleIdentifier: String?
+    let processIdentifier: pid_t
 }
