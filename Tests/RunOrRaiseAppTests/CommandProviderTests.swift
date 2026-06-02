@@ -163,6 +163,35 @@ struct CommandProviderTests {
         )
     }
 
+    @Test("running window snapshots fall back to accessibility titles when CoreGraphics omits titles")
+    func runningWindowSnapshotsUseAccessibilityTitles() {
+        let snapshots = RunningWindowCommandProvider.snapshots(
+            from: [
+                [
+                    kCGWindowOwnerPID as String: 101,
+                    kCGWindowLayer as String: 0,
+                    kCGWindowOwnerName as String: "Code",
+                    kCGWindowNumber as String: 202
+                ]
+            ],
+            accessibilityWindows: { processIdentifier in
+                #expect(processIdentifier == 101)
+                return [
+                    RunningAccessibilityWindowSnapshot(
+                        windowIdentifier: 202,
+                        title: "AppCoordinator.swift - run-or-raise"
+                    )
+                ]
+            }
+        )
+
+        #expect(snapshots.count == 1)
+        #expect(snapshots.first?.appName == "Code")
+        #expect(snapshots.first?.processIdentifier == 101)
+        #expect(snapshots.first?.windowIdentifier == 202)
+        #expect(snapshots.first?.title == "AppCoordinator.swift - run-or-raise")
+    }
+
     @Test("composite provider keeps windows and running app while suppressing equivalent installed apps")
     func compositeProviderDeduplicatesInstalledApps() {
         let installed = LauncherCommand(
