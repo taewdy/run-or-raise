@@ -320,6 +320,23 @@ struct CommandPaletteViewModelTests {
         #expect(viewModel.selectedCommandID == second.id)
     }
 
+    @Test("running selected command uses keyboard-selected result")
+    func runSelectedCommandUsesKeyboardSelectedResult() async {
+        let first = LauncherCommand(title: "First", subtitle: "Installed app")
+        let second = LauncherCommand(title: "Second", subtitle: "Running app")
+        let launcher = RecordingWorkspaceLauncher()
+        let viewModel = CommandPaletteViewModel(
+            commandIndex: InMemoryCommandIndex(commands: [first, second]),
+            launcher: launcher,
+            onCommandRun: {}
+        )
+
+        viewModel.selectNext()
+        await viewModel.runSelectedCommand()
+
+        #expect(launcher.openedCommands == [second])
+    }
+
     @Test("closing delegates to close handler")
     func closeDelegatesToCloseHandler() {
         var closeCount = 0

@@ -62,12 +62,20 @@ struct FuzzyCommandMatcher {
     }
 
     private func bestMatch(for command: LauncherCommand, query: String) -> TextMatch? {
-        command.searchFields
+        let fieldMatches = command.searchFields
             .compactMap { field in
                 match(field: field, query: query).map {
                     TextMatch(score: $0.score + field.weight, ranges: $0.ranges)
                 }
             }
+
+        let combinedMatches = command.combinedSearchFields.compactMap { combinedField in
+            match(combinedField: combinedField, query: query).map {
+                TextMatch(score: $0.score + combinedField.weight, ranges: $0.ranges)
+            }
+        }
+
+        return (fieldMatches + combinedMatches)
             .max { lhs, rhs in lhs.score < rhs.score }
     }
 
@@ -98,6 +106,38 @@ struct FuzzyCommandMatcher {
         }
 
         return fuzzyMatch(normalizedText: normalizedText, query: query, field: field.field)
+    }
+
+    private func match(combinedField: CombinedSearchableCommandField, query: String) -> TextMatch? {
+        let normalizedText = CombinedNormalizedSearchText(combinedField.fields)
+        guard !normalizedText.characters.isEmpty else { return nil }
+
+        if normalizedText.value == query {
+            return TextMatch(
+                score: 920 - normalizedText.characters.count,
+                ranges: normalizedText.ranges(for: 0..<query.count)
+            )
+        }
+
+        if normalizedText.value.hasPrefix(query) {
+            return TextMatch(
+                score: 770 - normalizedText.characters.count,
+                ranges: normalizedText.ranges(for: 0..<query.count)
+            )
+        }
+
+        if let range = normalizedText.value.range(of: query) {
+            let start = normalizedText.value.distance(from: normalizedText.value.startIndex, to: range.lowerBound)
+            let end = normalizedText.value.distance(from: normalizedText.value.startIndex, to: range.upperBound)
+            let compactBonus = max(0, 120 - start)
+            let boundaryBonus = normalizedText.isBoundary(at: start) ? 80 : 0
+            return TextMatch(
+                score: 540 + compactBonus + boundaryBonus - normalizedText.characters.count,
+                ranges: normalizedText.ranges(for: start..<end)
+            )
+        }
+
+        return fuzzyMatch(normalizedText: normalizedText, query: query)
     }
 
     private func fuzzyMatch(
@@ -135,6 +175,64 @@ struct FuzzyCommandMatcher {
             score: score,
             ranges: normalizedText.ranges(forOffsets: matchedOffsets, field: field)
         )
+    }
+
+    private func fuzzyMatch(
+        normalizedText: CombinedNormalizedSearchText,
+        query: String
+    ) -> TextMatch? {
+        var searchStart = 0
+        var matchedOffsets: [Int] = []
+        var score = 220
+        var previousOffset: Int?
+
+        for character in query {
+            guard let matchOffset = normalizedText.firstOffset(of: character, startingAt: searchStart) else {
+                return nil
+            }
+
+            matchedOffsets.append(matchOffset)
+            score += characterScore(
+                at: matchOffset,
+                previousOffset: previousOffset,
+                text: normalizedText
+            )
+            previousOffset = matchOffset
+            searchStart = matchOffset + 1
+        }
+
+        let span = (matchedOffsets.last ?? 0) - (matchedOffsets.first ?? 0) + 1
+        score -= span * 6
+        score -= normalizedText.characters.count
+
+        guard score >= 140 else { return nil }
+
+        return TextMatch(
+            score: score,
+            ranges: normalizedText.ranges(forOffsets: matchedOffsets)
+        )
+    }
+
+    private func characterScore(
+        at offset: Int,
+        previousOffset: Int?,
+        text: CombinedNormalizedSearchText
+    ) -> Int {
+        var score = 12
+
+        if let previousOffset, previousOffset + 1 == offset {
+            score += 60
+        }
+
+        if text.isBoundary(at: offset) {
+            score += 48
+        }
+
+        if offset == 0 {
+            score += 36
+        }
+
+        return score
     }
 
     private func characterScore(
@@ -193,6 +291,11 @@ private struct TextMatch {
 private struct SearchableCommandField {
     let field: CommandSearchField
     let value: String
+    let weight: Int
+}
+
+private struct CombinedSearchableCommandField {
+    let fields: [SearchableCommandField]
     let weight: Int
 }
 
@@ -267,6 +370,96 @@ private struct NormalizedSearchText {
     }
 }
 
+private struct CombinedNormalizedSearchText {
+    let value: String
+    let characters: [(character: Character, originalCharacter: Character, source: CombinedSearchSource?)]
+
+    init(_ fields: [SearchableCommandField]) {
+        var normalizedCharacters: [(character: Character, originalCharacter: Character, source: CombinedSearchSource?)] = []
+
+        for field in fields where !field.value.isEmpty {
+            if !normalizedCharacters.isEmpty {
+                normalizedCharacters.append((" ", " ", nil))
+            }
+
+            for (offset, character) in field.value.enumerated() {
+                let normalized = String(character)
+                    .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+                for normalizedCharacter in normalized {
+                    normalizedCharacters.append((
+                        normalizedCharacter,
+                        character,
+                        CombinedSearchSource(field: field.field, originalOffset: offset)
+                    ))
+                }
+            }
+        }
+
+        self.characters = normalizedCharacters
+        self.value = String(normalizedCharacters.map(\.character))
+    }
+
+    func firstOffset(of character: Character, startingAt start: Int) -> Int? {
+        guard start < characters.count else { return nil }
+        return characters[start...].firstIndex { $0.character == character }
+    }
+
+    func ranges(for normalizedOffsets: Range<Int>) -> [CommandMatchedRange] {
+        let offsets = Array(normalizedOffsets)
+        return ranges(forOffsets: offsets)
+    }
+
+    func ranges(forOffsets offsets: [Int]) -> [CommandMatchedRange] {
+        let sources = offsets.compactMap { characters[safe: $0]?.source }
+        guard !sources.isEmpty else { return [] }
+
+        var ranges: [CommandMatchedRange] = []
+        var rangeField = sources[0].field
+        var rangeStart = sources[0].originalOffset
+        var previous = sources[0].originalOffset
+
+        for source in sources.dropFirst() {
+            if source.field == rangeField, source.originalOffset == previous + 1 {
+                previous = source.originalOffset
+            } else {
+                ranges.append(CommandMatchedRange(
+                    field: rangeField,
+                    location: rangeStart,
+                    length: previous - rangeStart + 1
+                ))
+                rangeField = source.field
+                rangeStart = source.originalOffset
+                previous = source.originalOffset
+            }
+        }
+
+        ranges.append(CommandMatchedRange(
+            field: rangeField,
+            location: rangeStart,
+            length: previous - rangeStart + 1
+        ))
+        return ranges
+    }
+
+    func isBoundary(at offset: Int) -> Bool {
+        guard offset > 0, offset < characters.count else { return offset == 0 }
+
+        let current = characters[offset].originalCharacter
+        let previous = characters[offset - 1].originalCharacter
+
+        if previous == "/" || previous == "." || previous == "-" || previous == "_" || previous == " " {
+            return true
+        }
+
+        return previous.isLowercase && current.isUppercase
+    }
+}
+
+private struct CombinedSearchSource: Equatable {
+    let field: CommandSearchField
+    let originalOffset: Int
+}
+
 private extension LauncherCommand {
     var searchFields: [SearchableCommandField] {
         [
@@ -283,6 +476,39 @@ private extension LauncherCommand {
             return nil
         }
         return applicationURL?.standardizedFileURL.path
+    }
+
+    var combinedSearchFields: [CombinedSearchableCommandField] {
+        let fields = searchFields
+        guard fields.count > 1 else { return [] }
+
+        return [
+            CombinedSearchableCommandField(fields: fields, weight: -80),
+            CombinedSearchableCommandField(fields: fields.reorderedForAppFirstMatching, weight: -80)
+        ]
+    }
+}
+
+private extension Array where Element == SearchableCommandField {
+    var reorderedForAppFirstMatching: [SearchableCommandField] {
+        sorted { lhs, rhs in
+            appFirstPriority(lhs.field) < appFirstPriority(rhs.field)
+        }
+    }
+
+    private func appFirstPriority(_ field: CommandSearchField) -> Int {
+        switch field {
+        case .subtitle:
+            return 0
+        case .title:
+            return 1
+        case .bundleIdentifier:
+            return 2
+        case .executableName:
+            return 3
+        case .path:
+            return 4
+        }
     }
 }
 

@@ -98,6 +98,10 @@ private final class CommandPalettePanel: NSPanel {
             paletteViewModel?.selectNext()
         case .up:
             paletteViewModel?.selectPrevious()
+        case .submit:
+            Task { [weak paletteViewModel] in
+                await paletteViewModel?.runSelectedCommand()
+            }
         case .escape:
             paletteViewModel?.close()
         }
@@ -105,15 +109,22 @@ private final class CommandPalettePanel: NSPanel {
     }
 }
 
-private enum PaletteKey {
+enum PaletteKey: Equatable {
     case up
     case down
+    case submit
     case escape
 
     init?(event: NSEvent) {
-        switch event.keyCode {
+        self.init(keyCode: event.keyCode)
+    }
+
+    init?(keyCode: UInt16) {
+        switch keyCode {
         case 53:
             self = .escape
+        case 36, 76:
+            self = .submit
         case 125:
             self = .down
         case 126:

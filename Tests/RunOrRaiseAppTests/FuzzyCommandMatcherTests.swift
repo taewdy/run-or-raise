@@ -55,6 +55,55 @@ struct FuzzyCommandMatcherTests {
         #expect(matcher.search("applications/visual").first == command)
     }
 
+    @Test("queries match combined app and window text")
+    func queriesMatchCombinedAppAndWindowText() {
+        let jidayWindow = LauncherCommand(
+            title: "Jiday",
+            subtitle: "Window in Code",
+            bundleIdentifier: "com.microsoft.VSCode",
+            resultType: .runningWindow,
+            activationTarget: .runningWindow(
+                bundleIdentifier: "com.microsoft.VSCode",
+                processIdentifier: 42,
+                windowIdentifier: nil
+            )
+        )
+        let unrelatedWindow = LauncherCommand(
+            title: "Jira",
+            subtitle: "Window in Safari",
+            resultType: .runningWindow,
+            activationTarget: .runningWindow(
+                bundleIdentifier: "com.apple.Safari",
+                processIdentifier: 43,
+                windowIdentifier: nil
+            )
+        )
+        let matcher = FuzzyCommandMatcher(commands: [unrelatedWindow, jidayWindow])
+
+        #expect(matcher.search("Code Jiday").first == jidayWindow)
+        #expect(matcher.search("Jiday Code").first == jidayWindow)
+    }
+
+    @Test("combined matches return visible field highlight ranges")
+    func combinedMatchesReturnVisibleFieldHighlightRanges() {
+        let jidayWindow = LauncherCommand(
+            title: "Jiday",
+            subtitle: "Window in Code",
+            resultType: .runningWindow,
+            activationTarget: .runningWindow(
+                bundleIdentifier: "com.microsoft.VSCode",
+                processIdentifier: 42,
+                windowIdentifier: nil
+            )
+        )
+
+        let result = FuzzyCommandMatcher(commands: [jidayWindow]).searchResults("Code Jiday").first
+
+        #expect(result?.command == jidayWindow)
+        #expect(result?.matchedRanges.contains(CommandMatchedRange(field: .subtitle, location: 10, length: 4)) == true)
+        #expect(result?.matchedRanges.contains(CommandMatchedRange(field: .title, location: 0, length: 5)) == true)
+    }
+
     @Test("word and path boundary matches rank strongly")
     func boundaryMatchesRankStrongly() {
         let boundary = LauncherCommand(title: "Visual Studio Code", subtitle: "Installed app")
