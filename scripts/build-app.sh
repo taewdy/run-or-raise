@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONFIGURATION="${CONFIGURATION:-debug}"
+SIGN_IDENTITY="${SIGN_IDENTITY:-}"
 APP_DIR="$ROOT_DIR/.build/RunOrRaise.app"
 EXECUTABLE="$ROOT_DIR/.build/$CONFIGURATION/RunOrRaise"
 
@@ -39,6 +40,18 @@ cat > "$APP_DIR/Contents/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
-codesign --force --deep --sign - "$APP_DIR"
+if [[ -z "$SIGN_IDENTITY" ]]; then
+  SIGN_IDENTITY="$(
+    security find-identity -v -p codesigning |
+      sed -n 's/.*"\(Apple Development:.*\)"/\1/p' |
+      head -n 1
+  )"
+fi
+
+if [[ -z "$SIGN_IDENTITY" ]]; then
+  SIGN_IDENTITY="-"
+fi
+
+codesign --force --deep --sign "$SIGN_IDENTITY" "$APP_DIR"
 
 echo "$APP_DIR"

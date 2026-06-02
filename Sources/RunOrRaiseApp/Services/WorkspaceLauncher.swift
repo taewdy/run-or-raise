@@ -82,6 +82,7 @@ enum CommandActivationDecision: Equatable {
     case openInstalledApplication(bundleIdentifier: String?, applicationURL: URL?)
     case activateRunningApplication(bundleIdentifier: String?, processIdentifier: pid_t)
     case focusRunningWindow(bundleIdentifier: String?, processIdentifier: pid_t, windowIdentifier: CGWindowID)
+    case focusRunningWindowByTitle(bundleIdentifier: String?, processIdentifier: pid_t, title: String)
     case accessibilityPermissionRequired(bundleIdentifier: String?, processIdentifier: pid_t)
 }
 
@@ -99,16 +100,17 @@ enum CommandActivationDecider {
                 processIdentifier: processIdentifier
             )
         case .runningWindow(let bundleIdentifier, let processIdentifier, let windowIdentifier):
-            guard let windowIdentifier else {
-                return .activateRunningApplication(
-                    bundleIdentifier: bundleIdentifier,
-                    processIdentifier: processIdentifier
-                )
-            }
             guard isAccessibilityTrusted else {
                 return .accessibilityPermissionRequired(
                     bundleIdentifier: bundleIdentifier,
                     processIdentifier: processIdentifier
+                )
+            }
+            guard let windowIdentifier else {
+                return .focusRunningWindowByTitle(
+                    bundleIdentifier: bundleIdentifier,
+                    processIdentifier: processIdentifier,
+                    title: command.title
                 )
             }
             return .focusRunningWindow(
@@ -146,6 +148,12 @@ final class NSWorkspaceLauncher: WorkspaceLaunching {
                 bundleIdentifier: bundleIdentifier,
                 processIdentifier: processIdentifier,
                 windowIdentifier: windowIdentifier
+            )
+        case .focusRunningWindowByTitle(let bundleIdentifier, let processIdentifier, let title):
+            return focusRunningWindow(
+                bundleIdentifier: bundleIdentifier,
+                processIdentifier: processIdentifier,
+                title: title
             )
         }
     }
@@ -229,6 +237,36 @@ final class NSWorkspaceLauncher: WorkspaceLaunching {
             : .targetUnavailable
     }
 
+    private func focusRunningWindow(
+        bundleIdentifier: String?,
+        processIdentifier: pid_t,
+        title: String
+    ) -> WorkspaceLaunchResult {
+        let activationResult = activateRunningApplication(
+            bundleIdentifier: bundleIdentifier,
+            processIdentifier: processIdentifier
+        )
+        guard activationResult.didCompleteSelection else { return activationResult }
+
+        let applicationElement = AXUIElementCreateApplication(processIdentifier)
+        guard let windowElement = findWindow(
+            title: title,
+            in: applicationElement
+        ) else {
+            return .targetUnavailable
+        }
+
+        let raiseResult = AXUIElementPerformAction(windowElement, kAXRaiseAction as CFString)
+        let focusResult = AXUIElementSetAttributeValue(
+            applicationElement,
+            kAXFocusedWindowAttribute as CFString,
+            windowElement
+        )
+        return raiseResult == .success && focusResult == .success
+            ? .focusedWindow
+            : .targetUnavailable
+    }
+
     private func findWindow(windowIdentifier: CGWindowID, in applicationElement: AXUIElement) -> AXUIElement? {
         var rawWindows: CFTypeRef?
         let result = AXUIElementCopyAttributeValue(
@@ -240,6 +278,20 @@ final class NSWorkspaceLauncher: WorkspaceLaunching {
 
         return windows.first { window in
             axWindowIdentifier(window) == windowIdentifier
+        }
+    }
+
+    private func findWindow(title: String, in applicationElement: AXUIElement) -> AXUIElement? {
+        var rawWindows: CFTypeRef?
+        let result = AXUIElementCopyAttributeValue(
+            applicationElement,
+            kAXWindowsAttribute as CFString,
+            &rawWindows
+        )
+        guard result == .success, let windows = rawWindows as? [AXUIElement] else { return nil }
+
+        return windows.first { window in
+            axTitle(window)?.trimmingCharacters(in: .whitespacesAndNewlines) == title
         }
     }
 
@@ -259,5 +311,16 @@ final class NSWorkspaceLauncher: WorkspaceLaunching {
             return CGWindowID(identifier)
         }
         return nil
+    }
+
+    private func axTitle(_ window: AXUIElement) -> String? {
+        var rawTitle: CFTypeRef?
+        let result = AXUIElementCopyAttributeValue(
+            window,
+            kAXTitleAttribute as CFString,
+            &rawTitle
+        )
+        guard result == .success else { return nil }
+        return rawTitle as? String
     }
 }

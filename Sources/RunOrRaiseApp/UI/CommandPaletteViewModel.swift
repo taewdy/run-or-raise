@@ -18,6 +18,7 @@ final class CommandPaletteViewModel: ObservableObject {
     }
     @Published private(set) var results: [CommandSearchResult]
     @Published var selectedCommandID: LauncherCommand.ID?
+    @Published private(set) var resultsRevision = 0
     @Published private(set) var isLoading = false
     @Published private(set) var launchMessage: String?
 
@@ -135,6 +136,7 @@ final class CommandPaletteViewModel: ObservableObject {
         launchMessage = nil
         results = commandIndex.searchResults(query)
         selectedCommandID = results.first?.id
+        resultsRevision += 1
     }
 
     private func resetQueryAndResults() {

@@ -21,6 +21,26 @@ struct CommandPaletteViewModelTests {
         #expect(viewModel.selectedCommandID == terminal.id)
     }
 
+    @Test("query changes publish result revisions for scroll reset")
+    func queryChangesPublishResultRevisions() {
+        let terminal = LauncherCommand(title: "Terminal", subtitle: "Open terminal")
+        let finder = LauncherCommand(title: "Finder", subtitle: "Open finder")
+        let viewModel = CommandPaletteViewModel(
+            commandIndex: InMemoryCommandIndex(commands: [finder, terminal]),
+            launcher: RecordingWorkspaceLauncher(),
+            onCommandRun: {}
+        )
+        let initialRevision = viewModel.resultsRevision
+
+        viewModel.query = "term"
+        let filteredRevision = viewModel.resultsRevision
+        viewModel.query = ""
+
+        #expect(filteredRevision > initialRevision)
+        #expect(viewModel.resultsRevision > filteredRevision)
+        #expect(viewModel.selectedCommandID == finder.id)
+    }
+
     @Test("running selected command delegates launch and closes palette")
     func runSelectedCommandLaunchesCommand() async {
         let finder = LauncherCommand(title: "Finder", subtitle: "Open finder")

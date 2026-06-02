@@ -82,8 +82,8 @@ struct WorkspaceLauncherTests {
         ))
     }
 
-    @Test("windows without window identifiers fall back to app activation")
-    func runningWindowWithoutIdentifierActivatesApp() {
+    @Test("windows without window identifiers focus by title")
+    func runningWindowWithoutIdentifierFocusesByTitle() {
         let command = LauncherCommand(
             title: "Document",
             subtitle: "Window in Example",
@@ -99,9 +99,10 @@ struct WorkspaceLauncherTests {
         #expect(CommandActivationDecider.decision(
             for: command,
             isAccessibilityTrusted: true
-        ) == .activateRunningApplication(
+        ) == .focusRunningWindowByTitle(
             bundleIdentifier: "com.example.App",
-            processIdentifier: 42
+            processIdentifier: 42,
+            title: "Document"
         ))
     }
 

@@ -34,18 +34,29 @@ struct CommandPaletteView: View {
 
             ZStack {
                 if viewModel.shouldShowResults {
-                    List(selection: $viewModel.selectedCommandID) {
-                        ForEach(viewModel.resultItems) { item in
-                            CommandRow(item: item)
-                                .tag(item.id)
-                                .contentShape(Rectangle())
-                                .onTapGesture {
-                                    viewModel.selectedCommandID = item.id
-                                    Task { await viewModel.runSelectedCommand() }
+                    ScrollViewReader { proxy in
+                        List(selection: $viewModel.selectedCommandID) {
+                            ForEach(viewModel.resultItems) { item in
+                                CommandRow(item: item)
+                                    .id(item.id)
+                                    .tag(item.id)
+                                    .contentShape(Rectangle())
+                                    .onTapGesture {
+                                        viewModel.selectedCommandID = item.id
+                                        Task { await viewModel.runSelectedCommand() }
+                                    }
+                            }
+                        }
+                        .listStyle(.plain)
+                        .onChange(of: viewModel.resultsRevision) { _, _ in
+                            guard let selectedCommandID = viewModel.selectedCommandID else { return }
+                            DispatchQueue.main.async {
+                                withAnimation(.easeOut(duration: 0.08)) {
+                                    proxy.scrollTo(selectedCommandID, anchor: .top)
                                 }
+                            }
                         }
                     }
-                    .listStyle(.plain)
                 } else if viewModel.shouldShowLoadingState {
                     PaletteStateLabel(text: "Refreshing apps and windows...")
                 } else if viewModel.shouldShowEmptyState {
