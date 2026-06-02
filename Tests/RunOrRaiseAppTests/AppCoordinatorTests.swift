@@ -44,6 +44,48 @@ struct AppCoordinatorTests {
         #expect(palette.toggleCount == 0)
     }
 
+    @Test("status menu open palette shows without cycling hotkey selection")
+    func statusMenuOpenPaletteShowsWithoutCycling() throws {
+        let palette = RecordingPaletteController()
+        let statusItem = RecordingStatusItemController()
+        let coordinator = AppCoordinator(
+            commandIndex: InMemoryCommandIndex(commands: []),
+            permissionService: StaticPermissionService(),
+            hotKeyService: RecordingHotKeyService(),
+            workspaceLauncher: RecordingCoordinatorWorkspaceLauncher(),
+            showPaletteOnLaunch: false,
+            paletteController: palette,
+            statusItemController: statusItem
+        )
+
+        coordinator.start()
+        try statusItem.openPalette()
+
+        #expect(palette.showCount == 1)
+        #expect(palette.toggleCount == 0)
+    }
+
+    @Test("registered hotkey cycles palette instead of plain show")
+    func registeredHotkeyCyclesPalette() throws {
+        let palette = RecordingPaletteController()
+        let hotKeyService = RecordingHotKeyService()
+        let coordinator = AppCoordinator(
+            commandIndex: InMemoryCommandIndex(commands: []),
+            permissionService: StaticPermissionService(),
+            hotKeyService: hotKeyService,
+            workspaceLauncher: RecordingCoordinatorWorkspaceLauncher(),
+            showPaletteOnLaunch: false,
+            paletteController: palette,
+            statusItemController: RecordingStatusItemController()
+        )
+
+        coordinator.start()
+        try hotKeyService.trigger()
+
+        #expect(palette.showCount == 0)
+        #expect(palette.toggleCount == 1)
+    }
+
     @Test("start requests missing accessibility permission before indexing window titles")
     func startRequestsMissingAccessibilityPermission() {
         let permissionService = RecordingPermissionService(
@@ -89,6 +131,7 @@ private final class RecordingPaletteController: CommandPaletteWindowControlling 
 private final class RecordingStatusItemController: StatusItemControlling {
     private(set) var didConfigure = false
     private(set) var hotKeyError: String?
+    private var onOpenPalette: (() -> Void)?
 
     func configure(
         onOpenPalette: @escaping () -> Void,
@@ -97,6 +140,7 @@ private final class RecordingStatusItemController: StatusItemControlling {
         onQuit: @escaping () -> Void
     ) {
         didConfigure = true
+        self.onOpenPalette = onOpenPalette
     }
 
     func refresh() {}
@@ -104,17 +148,29 @@ private final class RecordingStatusItemController: StatusItemControlling {
     func setHotKeyError(_ message: String) {
         hotKeyError = message
     }
+
+    func openPalette() throws {
+        let onOpenPalette = try #require(onOpenPalette)
+        onOpenPalette()
+    }
 }
 
 @MainActor
 private final class RecordingHotKeyService: GlobalHotKeyRegistering {
     private(set) var registeredHotKey: HotKeyDescriptor?
+    private var action: (() -> Void)?
 
     func register(_ hotKey: HotKeyDescriptor, action: @escaping () -> Void) throws {
         registeredHotKey = hotKey
+        self.action = action
     }
 
     func unregister() {}
+
+    func trigger() throws {
+        let action = try #require(action)
+        action()
+    }
 }
 
 @MainActor

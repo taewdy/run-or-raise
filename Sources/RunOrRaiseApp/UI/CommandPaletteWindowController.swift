@@ -15,7 +15,7 @@ final class CommandPaletteWindowController: CommandPaletteWindowControlling {
 
     func toggle() {
         if window?.isVisible == true {
-            hide()
+            viewModel?.selectNext()
         } else {
             show()
         }

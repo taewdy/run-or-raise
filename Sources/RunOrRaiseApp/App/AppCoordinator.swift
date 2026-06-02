@@ -41,7 +41,7 @@ final class AppCoordinator {
 
     func start() {
         statusItemController.configure(
-            onOpenPalette: { [weak self] in self?.togglePalette() },
+            onOpenPalette: { [weak self] in self?.presentPalette() },
             onReindex: { [weak self] in self?.reindex() },
             onRequestPermissions: { [weak self] in self?.requestPermissions() },
             onQuit: { NSApplication.shared.terminate(nil) }
