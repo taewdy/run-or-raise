@@ -133,9 +133,20 @@ final class CommandPaletteViewModel: ObservableObject {
     }
 
     private func updateResults() {
+        updateResults(preservingSelection: false)
+    }
+
+    private func updateResults(preservingSelection: Bool) {
+        let previousSelection = selectedCommandID
         launchMessage = nil
         results = commandIndex.searchResults(query)
-        selectedCommandID = results.first?.id
+        if preservingSelection,
+           let previousSelection,
+           results.contains(where: { $0.id == previousSelection }) {
+            selectedCommandID = previousSelection
+        } else {
+            selectedCommandID = results.first?.id
+        }
         resultsRevision += 1
     }
 
@@ -154,7 +165,7 @@ final class CommandPaletteViewModel: ObservableObject {
 
         guard !Task.isCancelled, generation == refreshGeneration else { return }
         commandIndex.replaceCommands(with: refreshedCommands)
-        updateResults()
+        updateResults(preservingSelection: true)
         isLoading = false
         refreshTask = nil
     }

@@ -37,7 +37,7 @@ struct FuzzyCommandMatcher {
     func searchResults(_ query: String) -> [CommandSearchResult] {
         let normalizedQuery = query.normalizedForSearch
         guard !normalizedQuery.isEmpty else {
-            return commands.map { CommandSearchResult(command: $0, matchedRanges: []) }
+            return emptyQueryResults()
         }
         let now = Date()
 
@@ -59,6 +59,29 @@ struct FuzzyCommandMatcher {
             }
             .sorted(by: ranksBefore)
             .map { CommandSearchResult(command: $0.command, matchedRanges: $0.matchedRanges) }
+    }
+
+    private func emptyQueryResults() -> [CommandSearchResult] {
+        let now = Date()
+        return commands
+            .enumerated()
+            .map { index, command in
+                EmptyQueryCommand(
+                    index: index,
+                    command: command,
+                    usageScore: CommandUsageScorer.score(
+                        usageStore.usage(for: command.usageIdentity),
+                        now: now
+                    )
+                )
+            }
+            .sorted { lhs, rhs in
+                if lhs.usageScore != rhs.usageScore {
+                    return lhs.usageScore > rhs.usageScore
+                }
+                return lhs.index < rhs.index
+            }
+            .map { CommandSearchResult(command: $0.command, matchedRanges: []) }
     }
 
     private func bestMatch(for command: LauncherCommand, query: String) -> TextMatch? {
@@ -281,6 +304,12 @@ private struct ScoredCommand {
         if textScore >= 300 { return 60 }
         return 20
     }
+}
+
+private struct EmptyQueryCommand {
+    let index: Int
+    let command: LauncherCommand
+    let usageScore: Double
 }
 
 private struct TextMatch {

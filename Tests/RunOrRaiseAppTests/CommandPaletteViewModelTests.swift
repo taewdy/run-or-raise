@@ -182,6 +182,35 @@ struct CommandPaletteViewModelTests {
         #expect(commandIndex.searchQueries == ["", ""])
     }
 
+    @Test("refresh preserves user selection when selected command remains available")
+    func refreshPreservesSelectionWhenCommandRemainsAvailable() async throws {
+        let first = LauncherCommand(title: "First", subtitle: "Before reindex")
+        let second = LauncherCommand(title: "Second", subtitle: "Before reindex")
+        let commandIndex = BlockingRefreshCommandIndex(
+            initialCommands: [first, second],
+            refreshedCommands: [first, second]
+        )
+        let viewModel = CommandPaletteViewModel(
+            commandIndex: commandIndex,
+            launcher: RecordingWorkspaceLauncher(),
+            onCommandRun: {}
+        )
+
+        viewModel.paletteOpened()
+        await Task.yield()
+        #expect(commandIndex.waitUntilRefreshStarts())
+
+        viewModel.selectNext()
+        #expect(viewModel.selectedCommandID == second.id)
+
+        commandIndex.finishRefresh()
+        try await waitUntil {
+            viewModel.isLoading == false
+        }
+
+        #expect(viewModel.selectedCommandID == second.id)
+    }
+
     @Test("loading presentation keeps cached results visible during refresh")
     func loadingPresentationKeepsCachedResultsVisible() {
         let initial = LauncherCommand(title: "Initial", subtitle: "Before reindex")

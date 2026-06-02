@@ -10,11 +10,19 @@ struct FuzzyCommandMatcherTests {
         LauncherCommand(title: "Terminal", subtitle: "Open or raise Terminal")
     ]
 
-    @Test("empty query returns every command in index order")
-    func emptyQueryReturnsAllCommands() {
-        let results = FuzzyCommandMatcher(commands: commands).search("")
+    @Test("empty query returns recently used commands first")
+    func emptyQueryReturnsRecentlyUsedCommandsFirst() {
+        let now = Date()
+        let usageStore = FixtureCommandUsageStore(usages: [
+            commands[2].usageIdentity: CommandUsage(
+                selectionCount: 1,
+                lastSelectedAt: now.addingTimeInterval(-60)
+            )
+        ])
 
-        #expect(results.map(\.title) == ["Finder", "System Settings", "Terminal"])
+        let results = FuzzyCommandMatcher(commands: commands, usageStore: usageStore).search("")
+
+        #expect(results.map(\.title) == ["Terminal", "Finder", "System Settings"])
     }
 
     @Test("prefix matches rank before fuzzy matches")
