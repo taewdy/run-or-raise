@@ -19,6 +19,7 @@ final class CommandPaletteViewModel: ObservableObject {
     @Published private(set) var results: [CommandSearchResult]
     @Published var selectedCommandID: LauncherCommand.ID?
     @Published private(set) var resultsRevision = 0
+    @Published private(set) var selectionRevision = 0
     @Published private(set) var isLoading = false
     @Published private(set) var launchMessage: String?
 
@@ -132,6 +133,7 @@ final class CommandPaletteViewModel: ObservableObject {
         } ?? 0
         let nextIndex = (currentIndex + offset + results.count) % results.count
         selectedCommandID = results[nextIndex].id
+        selectionRevision += 1
     }
 
     private func updateResults() {

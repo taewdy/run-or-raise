@@ -41,6 +41,43 @@ struct CommandPaletteViewModelTests {
         #expect(viewModel.selectedCommandID == finder.id)
     }
 
+    @Test("keyboard navigation publishes selection revisions for scroll tracking")
+    func keyboardNavigationPublishesSelectionRevisions() {
+        let first = LauncherCommand(title: "First", subtitle: "Installed app")
+        let second = LauncherCommand(title: "Second", subtitle: "Running app")
+        let viewModel = CommandPaletteViewModel(
+            commandIndex: InMemoryCommandIndex(commands: [first, second]),
+            launcher: RecordingWorkspaceLauncher(),
+            onCommandRun: {}
+        )
+        let initialSelectionRevision = viewModel.selectionRevision
+        let initialResultsRevision = viewModel.resultsRevision
+
+        viewModel.selectNext()
+        let nextSelectionRevision = viewModel.selectionRevision
+        viewModel.selectPrevious()
+
+        #expect(nextSelectionRevision > initialSelectionRevision)
+        #expect(viewModel.selectionRevision > nextSelectionRevision)
+        #expect(viewModel.resultsRevision == initialResultsRevision)
+    }
+
+    @Test("query changes do not publish selection revisions")
+    func queryChangesDoNotPublishSelectionRevisions() {
+        let terminal = LauncherCommand(title: "Terminal", subtitle: "Open terminal")
+        let finder = LauncherCommand(title: "Finder", subtitle: "Open finder")
+        let viewModel = CommandPaletteViewModel(
+            commandIndex: InMemoryCommandIndex(commands: [finder, terminal]),
+            launcher: RecordingWorkspaceLauncher(),
+            onCommandRun: {}
+        )
+        let initialSelectionRevision = viewModel.selectionRevision
+
+        viewModel.query = "term"
+
+        #expect(viewModel.selectionRevision == initialSelectionRevision)
+    }
+
     @Test("running selected command delegates launch and closes palette")
     func runSelectedCommandLaunchesCommand() async {
         let finder = LauncherCommand(title: "Finder", subtitle: "Open finder")

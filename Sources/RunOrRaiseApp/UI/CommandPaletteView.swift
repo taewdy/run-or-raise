@@ -56,6 +56,14 @@ struct CommandPaletteView: View {
                                 }
                             }
                         }
+                        .onChange(of: viewModel.selectionRevision) { _, _ in
+                            guard let selectedCommandID = viewModel.selectedCommandID else { return }
+                            DispatchQueue.main.async {
+                                withAnimation(.easeOut(duration: 0.08)) {
+                                    proxy.scrollTo(selectedCommandID, anchor: .center)
+                                }
+                            }
+                        }
                     }
                 } else if viewModel.shouldShowLoadingState {
                     PaletteStateLabel(text: "Refreshing apps and windows...")
