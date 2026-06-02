@@ -44,6 +44,16 @@ enum CommandActivationTarget: Equatable {
     case runningWindow(bundleIdentifier: String?, processIdentifier: pid_t, windowIdentifier: CGWindowID?)
 }
 
+struct CurrentApplicationContext: Equatable, Sendable {
+    let bundleIdentifier: String?
+    let processIdentifier: pid_t?
+
+    init(bundleIdentifier: String?, processIdentifier: pid_t?) {
+        self.bundleIdentifier = bundleIdentifier
+        self.processIdentifier = processIdentifier
+    }
+}
+
 protocol CommandProviding {
     func commands() -> [LauncherCommand]
 }
@@ -52,6 +62,14 @@ protocol CommandIndex: AnyObject, Sendable {
     var allCommands: [LauncherCommand] { get }
     func search(_ query: String) -> [LauncherCommand]
     func searchResults(_ query: String) -> [CommandSearchResult]
+    func search(
+        _ query: String,
+        currentApplication: CurrentApplicationContext?
+    ) -> [LauncherCommand]
+    func searchResults(
+        _ query: String,
+        currentApplication: CurrentApplicationContext?
+    ) -> [CommandSearchResult]
     func recordSelection(_ command: LauncherCommand)
     func refreshedCommands() -> [LauncherCommand]
     func replaceCommands(with commands: [LauncherCommand])
@@ -61,6 +79,18 @@ protocol CommandIndex: AnyObject, Sendable {
 extension CommandIndex {
     func reindex() {
         replaceCommands(with: refreshedCommands())
+    }
+
+    func search(_ query: String) -> [LauncherCommand] {
+        search(query, currentApplication: nil)
+    }
+
+    func search(_ query: String, currentApplication: CurrentApplicationContext?) -> [LauncherCommand] {
+        searchResults(query, currentApplication: currentApplication).map(\.command)
+    }
+
+    func searchResults(_ query: String) -> [CommandSearchResult] {
+        searchResults(query, currentApplication: nil)
     }
 }
 
@@ -86,12 +116,15 @@ final class InMemoryCommandIndex: CommandIndex, @unchecked Sendable {
         self.usageStore = usageStore
     }
 
-    func search(_ query: String) -> [LauncherCommand] {
-        searchResults(query).map(\.command)
-    }
-
-    func searchResults(_ query: String) -> [CommandSearchResult] {
-        FuzzyCommandMatcher(commands: allCommands, usageStore: usageStore).searchResults(query)
+    func searchResults(
+        _ query: String,
+        currentApplication: CurrentApplicationContext?
+    ) -> [CommandSearchResult] {
+        FuzzyCommandMatcher(
+            commands: allCommands,
+            usageStore: usageStore,
+            currentApplication: currentApplication
+        ).searchResults(query)
     }
 
     func recordSelection(_ command: LauncherCommand) {

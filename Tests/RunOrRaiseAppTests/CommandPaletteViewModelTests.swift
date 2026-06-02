@@ -182,6 +182,80 @@ struct CommandPaletteViewModelTests {
         #expect(commandIndex.searchQueries == ["", ""])
     }
 
+    @Test("opening palette searches empty query with current app context")
+    func paletteOpenedSearchesWithCurrentAppContext() {
+        let code = LauncherCommand(
+            title: "Code",
+            subtitle: "Running app",
+            bundleIdentifier: "com.microsoft.VSCode",
+            resultType: .runningApplication,
+            activationTarget: .runningApplication(
+                bundleIdentifier: "com.microsoft.VSCode",
+                processIdentifier: 20
+            )
+        )
+        let terminal = LauncherCommand(
+            title: "Terminal",
+            subtitle: "Running app",
+            bundleIdentifier: "com.apple.Terminal",
+            resultType: .runningApplication,
+            activationTarget: .runningApplication(
+                bundleIdentifier: "com.apple.Terminal",
+                processIdentifier: 10
+            )
+        )
+        let commandIndex = BlockingRefreshCommandIndex(initialCommands: [code, terminal], refreshedCommands: [])
+        let viewModel = CommandPaletteViewModel(
+            commandIndex: commandIndex,
+            launcher: RecordingWorkspaceLauncher(),
+            onCommandRun: {}
+        )
+        commandIndex.resetSearchTracking()
+        let currentApplication = CurrentApplicationContext(
+            bundleIdentifier: "com.microsoft.VSCode",
+            processIdentifier: 20
+        )
+
+        viewModel.paletteOpened(currentApplication: currentApplication)
+
+        #expect(commandIndex.currentApplications == [currentApplication])
+        #expect(viewModel.results.map(\.command) == [terminal, code])
+
+        viewModel.cancelRefresh()
+        commandIndex.finishRefresh()
+    }
+
+    @Test("query changes keep matching current app normally")
+    func queryChangesKeepMatchingCurrentAppNormally() {
+        let code = LauncherCommand(
+            title: "Code",
+            subtitle: "Running app",
+            bundleIdentifier: "com.microsoft.VSCode"
+        )
+        let terminal = LauncherCommand(
+            title: "Terminal",
+            subtitle: "Running app",
+            bundleIdentifier: "com.apple.Terminal"
+        )
+        let commandIndex = BlockingRefreshCommandIndex(initialCommands: [code, terminal], refreshedCommands: [])
+        let viewModel = CommandPaletteViewModel(
+            commandIndex: commandIndex,
+            launcher: RecordingWorkspaceLauncher(),
+            onCommandRun: {}
+        )
+
+        viewModel.paletteOpened(currentApplication: CurrentApplicationContext(
+            bundleIdentifier: "com.microsoft.VSCode",
+            processIdentifier: 20
+        ))
+        viewModel.query = "code"
+
+        #expect(viewModel.results.map(\.command) == [code])
+
+        viewModel.cancelRefresh()
+        commandIndex.finishRefresh()
+    }
+
     @Test("refresh preserves user selection when selected command remains available")
     func refreshPreservesSelectionWhenCommandRemainsAvailable() async throws {
         let first = LauncherCommand(title: "First", subtitle: "Before reindex")
@@ -467,6 +541,7 @@ private final class BlockingRefreshCommandIndex: CommandIndex, @unchecked Sendab
     private let nextCommands: [LauncherCommand]
     private var refreshCompletions = 0
     private var recordedSearchQueries: [String] = []
+    private var recordedCurrentApplications: [CurrentApplicationContext?] = []
 
     var allCommands: [LauncherCommand] {
         lock.withLock {
@@ -480,14 +555,25 @@ private final class BlockingRefreshCommandIndex: CommandIndex, @unchecked Sendab
     }
 
     func search(_ query: String) -> [LauncherCommand] {
-        searchResults(query).map(\.command)
+        searchResults(query, currentApplication: nil).map(\.command)
     }
 
     func searchResults(_ query: String) -> [CommandSearchResult] {
+        searchResults(query, currentApplication: nil)
+    }
+
+    func searchResults(
+        _ query: String,
+        currentApplication: CurrentApplicationContext?
+    ) -> [CommandSearchResult] {
         lock.withLock {
             recordedSearchQueries.append(query)
+            recordedCurrentApplications.append(currentApplication)
         }
-        return FuzzyCommandMatcher(commands: allCommands).searchResults(query)
+        return FuzzyCommandMatcher(
+            commands: allCommands,
+            currentApplication: currentApplication
+        ).searchResults(query)
     }
 
     func recordSelection(_ command: LauncherCommand) {}
@@ -519,9 +605,16 @@ private final class BlockingRefreshCommandIndex: CommandIndex, @unchecked Sendab
         }
     }
 
+    var currentApplications: [CurrentApplicationContext?] {
+        lock.withLock {
+            recordedCurrentApplications
+        }
+    }
+
     func resetSearchTracking() {
         lock.withLock {
             recordedSearchQueries = []
+            recordedCurrentApplications = []
         }
     }
 
@@ -560,7 +653,17 @@ private final class SequencedRefreshCommandIndex: CommandIndex, @unchecked Senda
     }
 
     func searchResults(_ query: String) -> [CommandSearchResult] {
-        FuzzyCommandMatcher(commands: allCommands).searchResults(query)
+        searchResults(query, currentApplication: nil)
+    }
+
+    func searchResults(
+        _ query: String,
+        currentApplication: CurrentApplicationContext?
+    ) -> [CommandSearchResult] {
+        FuzzyCommandMatcher(
+            commands: allCommands,
+            currentApplication: currentApplication
+        ).searchResults(query)
     }
 
     func recordSelection(_ command: LauncherCommand) {}

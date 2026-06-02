@@ -28,6 +28,7 @@ final class CommandPaletteViewModel: ObservableObject {
     private let onClose: () -> Void
     private var refreshTask: Task<Void, Never>?
     private var refreshGeneration = 0
+    private var currentApplication: CurrentApplicationContext?
 
     init(
         commandIndex: CommandIndex,
@@ -70,7 +71,8 @@ final class CommandPaletteViewModel: ObservableObject {
         isLoading && !results.isEmpty
     }
 
-    func paletteOpened() {
+    func paletteOpened(currentApplication: CurrentApplicationContext? = nil) {
+        self.currentApplication = currentApplication
         refreshTask?.cancel()
         isLoading = true
         resetQueryAndResults()
@@ -139,7 +141,7 @@ final class CommandPaletteViewModel: ObservableObject {
     private func updateResults(preservingSelection: Bool) {
         let previousSelection = selectedCommandID
         launchMessage = nil
-        results = commandIndex.searchResults(query)
+        results = commandIndex.searchResults(query, currentApplication: currentApplication)
         if preservingSelection,
            let previousSelection,
            results.contains(where: { $0.id == previousSelection }) {

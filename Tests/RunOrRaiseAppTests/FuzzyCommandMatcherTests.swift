@@ -25,6 +25,91 @@ struct FuzzyCommandMatcherTests {
         #expect(results.map(\.title) == ["Terminal", "Finder", "System Settings"])
     }
 
+    @Test("empty query demotes commands for the current app")
+    func emptyQueryDemotesCurrentAppCommands() {
+        let terminal = LauncherCommand(
+            title: "Terminal",
+            subtitle: "Running app",
+            bundleIdentifier: "com.apple.Terminal",
+            resultType: .runningApplication,
+            activationTarget: .runningApplication(
+                bundleIdentifier: "com.apple.Terminal",
+                processIdentifier: 10
+            )
+        )
+        let code = LauncherCommand(
+            title: "Code",
+            subtitle: "Running app",
+            bundleIdentifier: "com.microsoft.VSCode",
+            resultType: .runningApplication,
+            activationTarget: .runningApplication(
+                bundleIdentifier: "com.microsoft.VSCode",
+                processIdentifier: 20
+            )
+        )
+        let codeWindow = LauncherCommand(
+            title: "README.md",
+            subtitle: "Window in Code",
+            bundleIdentifier: "com.microsoft.VSCode",
+            resultType: .runningWindow,
+            activationTarget: .runningWindow(
+                bundleIdentifier: "com.microsoft.VSCode",
+                processIdentifier: 20,
+                windowIdentifier: nil
+            )
+        )
+        let usageStore = FixtureCommandUsageStore(usages: [
+            code.usageIdentity: CommandUsage(
+                selectionCount: 50,
+                lastSelectedAt: Date(timeIntervalSinceNow: -30)
+            ),
+            codeWindow.usageIdentity: CommandUsage(
+                selectionCount: 40,
+                lastSelectedAt: Date(timeIntervalSinceNow: -30)
+            ),
+            terminal.usageIdentity: CommandUsage(
+                selectionCount: 1,
+                lastSelectedAt: Date(timeIntervalSinceNow: -7 * 24 * 60 * 60)
+            )
+        ])
+        let matcher = FuzzyCommandMatcher(
+            commands: [code, codeWindow, terminal],
+            usageStore: usageStore,
+            currentApplication: CurrentApplicationContext(
+                bundleIdentifier: "com.microsoft.VSCode",
+                processIdentifier: 20
+            )
+        )
+
+        let results = matcher.search("")
+
+        #expect(results.first == terminal)
+        #expect(results.suffix(2).allSatisfy { $0.bundleIdentifier == "com.microsoft.VSCode" })
+    }
+
+    @Test("typed queries still match the current app")
+    func typedQueriesStillMatchCurrentApp() {
+        let terminal = LauncherCommand(
+            title: "Terminal",
+            subtitle: "Running app",
+            bundleIdentifier: "com.apple.Terminal"
+        )
+        let code = LauncherCommand(
+            title: "Code",
+            subtitle: "Running app",
+            bundleIdentifier: "com.microsoft.VSCode"
+        )
+        let matcher = FuzzyCommandMatcher(
+            commands: [terminal, code],
+            currentApplication: CurrentApplicationContext(
+                bundleIdentifier: "com.microsoft.VSCode",
+                processIdentifier: 20
+            )
+        )
+
+        #expect(matcher.search("code").first == code)
+    }
+
     @Test("prefix matches rank before fuzzy matches")
     func prefixMatchesRankFirst() {
         let results = FuzzyCommandMatcher(commands: commands).search("term")

@@ -24,10 +24,16 @@ enum CommandSearchField: Equatable {
 struct FuzzyCommandMatcher {
     private let commands: [LauncherCommand]
     private let usageStore: CommandUsageStoring
+    private let currentApplication: CurrentApplicationContext?
 
-    init(commands: [LauncherCommand], usageStore: CommandUsageStoring = NoCommandUsageStore()) {
+    init(
+        commands: [LauncherCommand],
+        usageStore: CommandUsageStoring = NoCommandUsageStore(),
+        currentApplication: CurrentApplicationContext? = nil
+    ) {
         self.commands = commands
         self.usageStore = usageStore
+        self.currentApplication = currentApplication
     }
 
     func search(_ query: String) -> [LauncherCommand] {
@@ -69,6 +75,7 @@ struct FuzzyCommandMatcher {
                 EmptyQueryCommand(
                     index: index,
                     command: command,
+                    isCurrentApplication: command.matches(currentApplication),
                     usageScore: CommandUsageScorer.score(
                         usageStore.usage(for: command.usageIdentity),
                         now: now
@@ -76,6 +83,9 @@ struct FuzzyCommandMatcher {
                 )
             }
             .sorted { lhs, rhs in
+                if lhs.isCurrentApplication != rhs.isCurrentApplication {
+                    return !lhs.isCurrentApplication
+                }
                 if lhs.usageScore != rhs.usageScore {
                     return lhs.usageScore > rhs.usageScore
                 }
@@ -309,6 +319,7 @@ private struct ScoredCommand {
 private struct EmptyQueryCommand {
     let index: Int
     let command: LauncherCommand
+    let isCurrentApplication: Bool
     let usageScore: Double
 }
 
@@ -515,6 +526,27 @@ private extension LauncherCommand {
             CombinedSearchableCommandField(fields: fields, weight: -80),
             CombinedSearchableCommandField(fields: fields.reorderedForAppFirstMatching, weight: -80)
         ]
+    }
+
+    func matches(_ currentApplication: CurrentApplicationContext?) -> Bool {
+        guard let currentApplication else { return false }
+
+        if let currentBundleIdentifier = currentApplication.bundleIdentifier,
+           bundleIdentifier == currentBundleIdentifier {
+            return true
+        }
+
+        switch activationTarget {
+        case .installedApplication(let bundleIdentifier, _):
+            return bundleIdentifier == currentApplication.bundleIdentifier
+        case .runningApplication(let bundleIdentifier, let processIdentifier),
+                .runningWindow(let bundleIdentifier, let processIdentifier, _):
+            if let currentBundleIdentifier = currentApplication.bundleIdentifier,
+               bundleIdentifier == currentBundleIdentifier {
+                return true
+            }
+            return currentApplication.processIdentifier == processIdentifier
+        }
     }
 }
 

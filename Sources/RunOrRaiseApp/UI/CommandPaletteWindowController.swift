@@ -22,8 +22,14 @@ final class CommandPaletteWindowController: CommandPaletteWindowControlling {
     }
 
     func show() {
+        let currentApplication = NSWorkspace.shared.frontmostApplication.map {
+            CurrentApplicationContext(
+                bundleIdentifier: $0.bundleIdentifier,
+                processIdentifier: $0.processIdentifier
+            )
+        }
         let panel = window ?? makePanel()
-        viewModel?.paletteOpened()
+        viewModel?.paletteOpened(currentApplication: currentApplication)
         center(panel)
         NSApplication.shared.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
