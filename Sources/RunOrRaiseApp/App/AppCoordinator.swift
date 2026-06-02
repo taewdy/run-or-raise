@@ -55,6 +55,8 @@ final class AppCoordinator {
             statusItemController.setHotKeyError(error.localizedDescription)
         }
 
+        requestMissingPermissions()
+
         if showPaletteOnLaunch {
             presentPalette()
         }
@@ -78,6 +80,14 @@ final class AppCoordinator {
     }
 
     private func requestPermissions() {
+        _ = permissionService.requestPermission()
+        statusItemController.refresh()
+    }
+
+    private func requestMissingPermissions() {
+        guard permissionService.currentStatuses().contains(where: { !$0.isGranted }) else {
+            return
+        }
         _ = permissionService.requestPermission()
         statusItemController.refresh()
     }

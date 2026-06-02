@@ -43,6 +43,32 @@ struct AppCoordinatorTests {
         #expect(palette.showCount == 2)
         #expect(palette.toggleCount == 0)
     }
+
+    @Test("start requests missing accessibility permission before indexing window titles")
+    func startRequestsMissingAccessibilityPermission() {
+        let permissionService = RecordingPermissionService(
+            statuses: [
+                PermissionStatus(
+                    name: "Accessibility",
+                    isGranted: false,
+                    recoveryAction: "Open Accessibility Settings"
+                )
+            ]
+        )
+        let coordinator = AppCoordinator(
+            commandIndex: InMemoryCommandIndex(commands: []),
+            permissionService: permissionService,
+            hotKeyService: RecordingHotKeyService(),
+            workspaceLauncher: RecordingCoordinatorWorkspaceLauncher(),
+            showPaletteOnLaunch: false,
+            paletteController: RecordingPaletteController(),
+            statusItemController: RecordingStatusItemController()
+        )
+
+        coordinator.start()
+
+        #expect(permissionService.requestPermissionCount == 1)
+    }
 }
 
 @MainActor
@@ -95,6 +121,25 @@ private final class RecordingHotKeyService: GlobalHotKeyRegistering {
 private struct StaticPermissionService: PermissionStatusProviding {
     func currentStatuses() -> [PermissionStatus] { [] }
     func requestPermission() -> Bool { true }
+}
+
+@MainActor
+private final class RecordingPermissionService: PermissionStatusProviding {
+    private let statuses: [PermissionStatus]
+    private(set) var requestPermissionCount = 0
+
+    init(statuses: [PermissionStatus]) {
+        self.statuses = statuses
+    }
+
+    func currentStatuses() -> [PermissionStatus] {
+        statuses
+    }
+
+    func requestPermission() -> Bool {
+        requestPermissionCount += 1
+        return false
+    }
 }
 
 @MainActor
