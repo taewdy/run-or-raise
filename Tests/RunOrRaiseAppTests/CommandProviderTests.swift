@@ -221,6 +221,36 @@ struct CommandProviderTests {
         #expect(snapshots.first?.title == "Package.swift - run-or-raise")
     }
 
+    @Test("running window snapshots include accessibility windows from running apps without CoreGraphics windows")
+    func runningWindowSnapshotsIncludeNonCurrentRunningAppWindows() {
+        let snapshots = RunningWindowCommandProvider.snapshots(
+            from: [],
+            runningApplications: [
+                RunningApplicationSnapshot(
+                    localizedName: "Code",
+                    bundleIdentifier: "com.microsoft.VSCode",
+                    processIdentifier: 101
+                )
+            ],
+            accessibilityWindows: { processIdentifier in
+                #expect(processIdentifier == 101)
+                return [
+                    RunningAccessibilityWindowSnapshot(
+                        windowIdentifier: nil,
+                        title: "Hidden Project"
+                    )
+                ]
+            }
+        )
+
+        #expect(snapshots.count == 1)
+        #expect(snapshots.first?.appName == "Code")
+        #expect(snapshots.first?.bundleIdentifier == "com.microsoft.VSCode")
+        #expect(snapshots.first?.processIdentifier == 101)
+        #expect(snapshots.first?.windowIdentifier == nil)
+        #expect(snapshots.first?.title == "Hidden Project")
+    }
+
     @Test("composite provider keeps windows and running app while suppressing equivalent installed apps")
     func compositeProviderDeduplicatesInstalledApps() {
         let installed = LauncherCommand(
