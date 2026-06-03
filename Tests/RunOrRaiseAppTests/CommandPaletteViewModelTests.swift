@@ -355,6 +355,53 @@ struct CommandPaletteViewModelTests {
         #expect(viewModel.selectedCommandID == second.id)
     }
 
+    @Test("refresh preserves user selection by stable command identity")
+    func refreshPreservesSelectionByStableCommandIdentity() async throws {
+        let first = LauncherCommand(
+            title: "First",
+            subtitle: "Before reindex",
+            bundleIdentifier: "com.example.First"
+        )
+        let second = LauncherCommand(
+            title: "Second",
+            subtitle: "Before reindex",
+            bundleIdentifier: "com.example.Second"
+        )
+        let refreshedFirst = LauncherCommand(
+            title: "First",
+            subtitle: "After reindex",
+            bundleIdentifier: "com.example.First"
+        )
+        let refreshedSecond = LauncherCommand(
+            title: "Second",
+            subtitle: "After reindex",
+            bundleIdentifier: "com.example.Second"
+        )
+        let commandIndex = BlockingRefreshCommandIndex(
+            initialCommands: [first, second],
+            refreshedCommands: [refreshedFirst, refreshedSecond]
+        )
+        let viewModel = CommandPaletteViewModel(
+            commandIndex: commandIndex,
+            launcher: RecordingWorkspaceLauncher(),
+            onCommandRun: {}
+        )
+
+        viewModel.paletteOpened()
+        await Task.yield()
+        #expect(commandIndex.waitUntilRefreshStarts())
+
+        viewModel.selectNext()
+        #expect(viewModel.selectedCommandID == second.id)
+
+        commandIndex.finishRefresh()
+        try await waitUntil {
+            viewModel.results.map(\.command) == [refreshedFirst, refreshedSecond]
+        }
+
+        #expect(viewModel.selectedCommandID == refreshedSecond.id)
+    }
+
     @Test("loading presentation keeps cached results visible during refresh")
     func loadingPresentationKeepsCachedResultsVisible() {
         let initial = LauncherCommand(title: "Initial", subtitle: "Before reindex")

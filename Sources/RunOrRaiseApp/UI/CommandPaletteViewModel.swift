@@ -166,16 +166,34 @@ final class CommandPaletteViewModel: ObservableObject {
 
     private func updateResults(preservingSelection: Bool) {
         let previousSelection = selectedCommandID
+        let previousSelectionIdentity = selectedCommand?.usageIdentity
         launchMessage = nil
         results = commandIndex.searchResults(query, currentApplication: currentApplication)
         if preservingSelection,
-           let previousSelection,
-           results.contains(where: { $0.id == previousSelection }) {
-            selectedCommandID = previousSelection
+           let preservedSelectionID = preservedSelectionID(
+               matching: previousSelection,
+               identity: previousSelectionIdentity
+           ) {
+            selectedCommandID = preservedSelectionID
         } else {
             selectedCommandID = results.first?.id
         }
         resultsRevision += 1
+    }
+
+    private func preservedSelectionID(
+        matching previousSelection: LauncherCommand.ID?,
+        identity previousSelectionIdentity: String?
+    ) -> LauncherCommand.ID? {
+        if let previousSelection,
+           results.contains(where: { $0.id == previousSelection }) {
+            return previousSelection
+        }
+
+        guard let previousSelectionIdentity else { return nil }
+        return results.first {
+            $0.command.usageIdentity == previousSelectionIdentity
+        }?.id
     }
 
     private func resetQueryAndResults() {
