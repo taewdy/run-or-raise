@@ -185,8 +185,8 @@ struct CommandPaletteViewModelTests {
         #expect(viewModel.results.map(\.command) == [finder, terminal])
     }
 
-    @Test("opening refreshes command data and exposes refreshed results")
-    func paletteOpenedRefreshesCommandData() async throws {
+    @Test("opening with cached results refreshes quietly and exposes refreshed results")
+    func paletteOpenedRefreshesCachedCommandDataQuietly() async throws {
         let initial = LauncherCommand(title: "Initial", subtitle: "Before reindex")
         let refreshed = LauncherCommand(title: "Refreshed", subtitle: "After reindex")
         let commandIndex = BlockingRefreshCommandIndex(initialCommands: [initial], refreshedCommands: [refreshed])
@@ -202,21 +202,51 @@ struct CommandPaletteViewModelTests {
         #expect(viewModel.query.isEmpty)
         #expect(viewModel.results.map(\.command) == [initial])
         #expect(viewModel.selectedCommandID == initial.id)
-        #expect(viewModel.isLoading)
+        #expect(viewModel.isLoading == false)
+        #expect(viewModel.shouldShowRefreshIndicator == false)
         #expect(commandIndex.searchQueries == [""])
 
         await Task.yield()
         #expect(commandIndex.waitUntilRefreshStarts())
-        #expect(viewModel.isLoading)
+        #expect(viewModel.isLoading == false)
 
         commandIndex.finishRefresh()
         try await waitUntil {
-            viewModel.isLoading == false
+            viewModel.results.map(\.command) == [refreshed]
         }
 
         #expect(viewModel.results.map(\.command) == [refreshed])
         #expect(viewModel.selectedCommandID == refreshed.id)
         #expect(commandIndex.searchQueries == ["", ""])
+    }
+
+    @Test("opening skips refresh while command data is fresh")
+    func paletteOpenedSkipsRefreshWhileCommandDataIsFresh() async throws {
+        var now = Date(timeIntervalSince1970: 1_000)
+        let initial = LauncherCommand(title: "Initial", subtitle: "Before reindex")
+        let refreshed = LauncherCommand(title: "Refreshed", subtitle: "After reindex")
+        let commandIndex = BlockingRefreshCommandIndex(initialCommands: [initial], refreshedCommands: [refreshed])
+        let viewModel = CommandPaletteViewModel(
+            commandIndex: commandIndex,
+            launcher: RecordingWorkspaceLauncher(),
+            onCommandRun: {},
+            now: { now }
+        )
+
+        viewModel.paletteOpened()
+        await Task.yield()
+        #expect(commandIndex.waitUntilRefreshStarts())
+        commandIndex.finishRefresh()
+        try await waitUntil {
+            viewModel.results.map(\.command) == [refreshed]
+        }
+
+        now = now.addingTimeInterval(5)
+        viewModel.paletteOpened()
+        await Task.yield()
+
+        #expect(commandIndex.startedRefreshCount == 1)
+        #expect(viewModel.isLoading == false)
     }
 
     @Test("opening palette searches empty query with current app context")
@@ -335,7 +365,7 @@ struct CommandPaletteViewModelTests {
         viewModel.paletteOpened()
 
         #expect(viewModel.shouldShowResults)
-        #expect(viewModel.shouldShowRefreshIndicator)
+        #expect(viewModel.shouldShowRefreshIndicator == false)
         #expect(viewModel.shouldShowLoadingState == false)
         #expect(viewModel.shouldShowEmptyState == false)
 
@@ -576,6 +606,7 @@ private final class BlockingRefreshCommandIndex: CommandIndex, @unchecked Sendab
     private let refreshCanFinish = DispatchSemaphore(value: 0)
     private var commands: [LauncherCommand]
     private let nextCommands: [LauncherCommand]
+    private var refreshStarts = 0
     private var refreshCompletions = 0
     private var recordedSearchQueries: [String] = []
     private var recordedCurrentApplications: [CurrentApplicationContext?] = []
@@ -616,6 +647,9 @@ private final class BlockingRefreshCommandIndex: CommandIndex, @unchecked Sendab
     func recordSelection(_ command: LauncherCommand) {}
 
     func refreshedCommands() -> [LauncherCommand] {
+        lock.withLock {
+            refreshStarts += 1
+        }
         refreshStarted.signal()
         refreshCanFinish.wait()
         lock.withLock {
@@ -633,6 +667,12 @@ private final class BlockingRefreshCommandIndex: CommandIndex, @unchecked Sendab
     var completedRefreshCount: Int {
         lock.withLock {
             refreshCompletions
+        }
+    }
+
+    var startedRefreshCount: Int {
+        lock.withLock {
+            refreshStarts
         }
     }
 

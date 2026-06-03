@@ -27,20 +27,27 @@ final class CommandPaletteViewModel: ObservableObject {
     private let launcher: WorkspaceLaunching
     private let onCommandRun: () -> Void
     private let onClose: () -> Void
+    private let refreshFreshnessInterval: TimeInterval
+    private let now: () -> Date
     private var refreshTask: Task<Void, Never>?
     private var refreshGeneration = 0
     private var currentApplication: CurrentApplicationContext?
+    private var lastRefreshDate: Date?
 
     init(
         commandIndex: CommandIndex,
         launcher: WorkspaceLaunching,
         onCommandRun: @escaping () -> Void,
-        onClose: @escaping () -> Void = {}
+        onClose: @escaping () -> Void = {},
+        refreshFreshnessInterval: TimeInterval = 10,
+        now: @escaping () -> Date = Date.init
     ) {
         self.commandIndex = commandIndex
         self.launcher = launcher
         self.onCommandRun = onCommandRun
         self.onClose = onClose
+        self.refreshFreshnessInterval = refreshFreshnessInterval
+        self.now = now
         self.results = commandIndex.searchResults("")
         self.selectedCommandID = results.first?.id
     }
@@ -75,14 +82,29 @@ final class CommandPaletteViewModel: ObservableObject {
     func paletteOpened(currentApplication: CurrentApplicationContext? = nil) {
         self.currentApplication = currentApplication
         refreshTask?.cancel()
-        isLoading = true
         resetQueryAndResults()
+        let hasVisibleResults = !results.isEmpty
+        isLoading = !hasVisibleResults
+
+        guard shouldRefreshOnOpen(hasVisibleResults: hasVisibleResults) else {
+            refreshTask = nil
+            isLoading = false
+            return
+        }
+
         refreshGeneration += 1
         let generation = refreshGeneration
         refreshTask = Task { [weak self] in
             guard let self else { return }
             await self.refreshCommandData(generation: generation)
         }
+    }
+
+    private func shouldRefreshOnOpen(hasVisibleResults: Bool) -> Bool {
+        guard hasVisibleResults, let lastRefreshDate else {
+            return true
+        }
+        return now().timeIntervalSince(lastRefreshDate) >= refreshFreshnessInterval
     }
 
     func cancelRefresh() {
@@ -169,6 +191,7 @@ final class CommandPaletteViewModel: ObservableObject {
 
         guard !Task.isCancelled, generation == refreshGeneration else { return }
         commandIndex.replaceCommands(with: refreshedCommands)
+        lastRefreshDate = now()
         updateResults(preservingSelection: true)
         isLoading = false
         refreshTask = nil
