@@ -56,9 +56,12 @@ struct CommandPaletteViewModelTests {
         viewModel.selectNext()
         let nextSelectionRevision = viewModel.selectionRevision
         viewModel.selectPrevious()
+        let previousSelectionRevision = viewModel.selectionRevision
+        viewModel.selectPrevious()
 
         #expect(nextSelectionRevision > initialSelectionRevision)
-        #expect(viewModel.selectionRevision > nextSelectionRevision)
+        #expect(previousSelectionRevision > nextSelectionRevision)
+        #expect(viewModel.selectionRevision == previousSelectionRevision)
         #expect(viewModel.resultsRevision == initialResultsRevision)
     }
 
@@ -484,10 +487,13 @@ struct CommandPaletteViewModelTests {
         #expect(viewModel.selectedCommandID == second.id)
 
         viewModel.selectNext()
+        #expect(viewModel.selectedCommandID == second.id)
+
+        viewModel.selectPrevious()
         #expect(viewModel.selectedCommandID == first.id)
 
         viewModel.selectPrevious()
-        #expect(viewModel.selectedCommandID == second.id)
+        #expect(viewModel.selectedCommandID == first.id)
     }
 
     @Test("running selected command uses keyboard-selected result")

@@ -153,7 +153,9 @@ final class CommandPaletteViewModel: ObservableObject {
         let currentIndex = selectedCommandID.flatMap { selectedID in
             results.firstIndex { $0.id == selectedID }
         } ?? 0
-        let nextIndex = (currentIndex + offset + results.count) % results.count
+        let nextIndex = min(max(currentIndex + offset, 0), results.count - 1)
+        guard nextIndex != currentIndex else { return }
+
         selectedCommandID = results[nextIndex].id
         selectionRevision += 1
     }
