@@ -14,9 +14,15 @@ final class CommandPaletteWindowController: CommandPaletteWindowControlling {
     }
 
     func toggle() {
-        if window?.isVisible == true {
+        let state = CommandPaletteWindowState(
+            isVisible: window?.isVisible == true,
+            isKey: window?.isKeyWindow == true
+        )
+
+        switch CommandPaletteTogglePolicy.action(for: state) {
+        case .selectNext:
             viewModel?.selectNext()
-        } else {
+        case .show:
             show()
         }
     }
@@ -83,6 +89,25 @@ final class CommandPaletteWindowController: CommandPaletteWindowControlling {
         return NSScreen.screens.first { screen in
             screen.frame.contains(mouseLocation)
         }?.visibleFrame ?? NSScreen.main?.visibleFrame
+    }
+}
+
+struct CommandPaletteWindowState: Equatable {
+    let isVisible: Bool
+    let isKey: Bool
+}
+
+enum CommandPaletteToggleAction: Equatable {
+    case show
+    case selectNext
+}
+
+enum CommandPaletteTogglePolicy {
+    static func action(for state: CommandPaletteWindowState) -> CommandPaletteToggleAction {
+        guard state.isVisible, state.isKey else {
+            return .show
+        }
+        return .selectNext
     }
 }
 
